@@ -1,0 +1,266 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;     UTILITIES (for birdflu project)      ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to zerosToTaskDefaults [
+#name  ;(string) : name of global variable
+#table ;(table) : map names (strings) to tasks
+]
+  ;; The current experiment has already set the  values.
+  ;; We do not want to override the experiment values!
+  ;; Here we are trying to set defaults only when BS has not assigned a value.
+  ;; We will use an imperfect signal that variable is only declared: a value of 0.
+  ;; Note: this means we MUST NOT (!!) use BS to set 0 values on non-interface globals
+  ;; (i.e., those globals that have non-zero default values).  Create scenario instead.
+  if (run-result #name != 0) [error "current value must be 0"]
+  let _tval table:get #table #name
+  if (not is-reporter-task? _tval) [error "use this proc only for reporter tasks"]
+  type (word #name ":" _tval " ")
+  run (word "set " #name " _tval")
+end
+
+to zerosToNumericDefaults [
+#name  ;(string) : name of global variable
+#table ;(table) : map names (strings) to values
+]
+  ;; Keep in mind that the experiment has already set its values.
+  ;; We do not want to override the experiment values!
+  ;; Here we are trying to set defaults only when BS has not assigned a value.
+  ;; We will use an imperfect signal that variable is only declared: a value of 0.
+  ;; Note: this means we MUST NOT (!!) use BS to set 0 values on non-interface globals
+  ;; (i.e., those globals that have non-zero default values).  Create scenario instead.
+  if (run-result #name = 0) [
+    let _tval table:get #table #name
+    type (word #name ":" _tval " ")
+    run (word "set " #name " " _tval)
+  ]
+end
+
+to-report make-filename [
+#experiment ;(string) : the experiment name
+#scenario   ;(string) : the scenario name
+#run        ;(int) : the replicate number
+]
+  let _fname #experiment
+  if (_fname = 0 or _fname = "") [
+    set _fname (word baseline)
+  ]
+  if (#scenario != "none") [
+    set _fname (word _fname "-" scenario)
+  ]
+  if (#run > 0) [
+    if (#experiment = 0 or #experiment = "") [
+      error "set experiment-name global in experiment"
+    ];chkchk acutally, that shd no longer (5.2) be necessary
+    ;; zero pad the run number
+    let _fnum (word "0000" #run)
+    let _len length _fnum
+    set _fnum (substring _fnum (_len - 4) _len)
+    set _fname (word _fname "-" _fnum)
+  ]
+  report _fname
+end
+
+to log2file [#str]
+  file-open log-file
+  file-show #str
+  file-close
+end
+
+to-report pair-with [#x #ylst]
+  ;;Return list; pairs `#x` with each item of `#ylst`
+  ;; `#x` : object
+  ;; `#ylst` : list
+  ;; :note: used by `list-product`
+  report map [(list #x ?)] #ylst
+end
+
+to-report list-product [#xlst #ylst]
+  ;;Report list of two-element lists;
+  ;;all possible (x,y) including repeats
+  ;; `#xlst` : list
+  ;; `#ylst` : list
+  report reduce sentence (map [pair-with ? #ylst] #xlst)
+end
+
+to-report disjoint-subsets [#tset #sizes]
+  ;;Report list of turtlesets, subsets of #tset, with sizes #sizes.
+  ;; #tset : turtle-set
+  ;;  the set to be drawn from
+  ;; #sizes : list
+  ;;  the sizes of the subsets
+  if (sum #sizes > count #tset) [error "need sum #sizes <= count #tset"]
+  let _tlst [self] of #tset  ;; cast to list (in random order)
+  ;;next, create the cumulative sum of the size (but start with a 0)
+  ;;(note the trick of inserting the *list* containing zero into the list)
+  let _psums reduce [lput (?2 + last ?1) ?1] fput [0] #sizes
+  report (map [turtle-set sublist _tlst ?1 ?2] butlast _psums butfirst _psums)
+end
+
+to-report weighted-integer-partition [#n #wts]
+  ;;Report list: an integer partition of #n.
+  ;;#n : positive integer
+  ;; the integer to partition
+  ;;#wts : list
+  ;;  the weights; the number of weights is number of parts;
+  ;;  weights determine probability of being in a part
+  ;;Comment: allows zeros! (Unlike a true integer partition.)
+  if (#n <= 0 or #n != round #n) [error "first argument must be a positive integer"]
+  if (0 < length filter [? < 0] #wts) [error "weights must be nonnegative"]
+  if (empty? filter [? > 0] #wts) [error "at least one weight must be positive"]
+  ;;first try: maybe the weights constitute a partition of #n
+  let _rndwts map [round ?] #wts
+  if (#n = sum _rndwts) [ ;;-> we already have an integer partition
+    report _rndwts
+  ]
+  ;;second try: maybe the scaled weights constitute a partition of #n
+  let _sumwts sum #wts
+  let _scaledwts map [round (? * #n / _sumwts)] #wts
+  if (#n = sum _scaledwts) [ ;;-> we already have an integer partition
+    report _scaledwts
+  ]
+  ;; remaining case: use floor to get a first attempt at a partition,
+  ;; and then allocate the leftover
+  let _result map [floor (? * #n / _sumwts)] #wts
+  let _idxlst n-values (length #wts) [?]
+  while [sum _result < #n] [
+    let _idx random-weighted _idxlst #wts
+    set _result replace-item _idx _result (1 + item _idx _result)
+  ]
+  report _result
+end
+
+to-report random-binomial [#n #p] ;; written by Seth Tisue
+  ;;Return integer: a single draw from a binomial distribution.
+  ;;Inputs: postive integer #n and probability of success #p
+  report length filter [? < #p] n-values #n [random-float 1]
+end
+
+;; return a result (value) based on the probabilities (defined by #weights) of each value
+;; written by Nick Bennet 2009 http://groups.yahoo.com/group/netlogo-users/message/9091 
+to-report random-weighted [#values #weights]
+  let _selector (random-float sum #weights)
+  let _running-sum 0
+  (foreach #values #weights [
+    set _running-sum (_running-sum + ?2)
+    if (_running-sum > _selector) [ report ?1 ]
+  ])
+end
+
+;; report a list of strings
+;; produced by splitting a string on a separator
+;; written by Jim Lyons (2007).
+to-report split [ #string #sep ] ; #sep must be non-empty string
+  let result [] ; return value
+  let w length #sep
+  loop [
+    let next-pos position #sep #string
+    if not is-number? next-pos [
+      report reverse (fput #string result)
+    ] ; exit when done
+    set result fput (substring #string 0 next-pos) result
+    set #string substring #string (next-pos + w) (length #string)
+  ]
+end
+
+;; report bool, true if patch is adjacent to the link
+;; Comment:
+;; use law of sines to determine
+;; minimum distance from patch to link (no wrapping)
+to-report patch-near-link? [#patch #link]
+  let max-distance 1
+  let eps 0.0001
+  set max-distance (max-distance + eps)
+  let dist 0
+  let result true
+  ask [both-ends] of #link [
+    if (patch-here != #patch) [
+      let angle abs (subtract-headings towards #patch towards [other-end] of #link)
+      ifelse (angle > 90) [
+        set result false
+      ] [
+        set dist (sin angle) * distance #patch
+        if (dist > max-distance) [set result false]
+      ]
+    ]
+  ]
+  report result
+end
+
+to-report random-pert [#minval #likeval #maxval]
+  ;use pert params to draw from a beta distribution
+  if not (#minval <= #likeval and #likeval <= #maxval) [error "wrong argument ranking"]
+  if (#minval = #likeval and #likeval = #maxval) [report #minval] ;;handle trivial inputs
+  let pert-var 1. / 36
+  let pert-mean (#maxval + 4 * #likeval - 5 * #minval) / (6 * (#maxval - #minval))
+  let temp pert-mean * (1 - pert-mean) / pert-var
+  let alpha1 pert-mean * (temp - 1)
+  let alpha2 (1 - pert-mean) * (temp - 1)
+  let x1 random-gamma alpha1 1
+  let x2 random-gamma alpha2 1
+  report (x1 / (x1 + x2)) * (#maxval - #minval) + #minval
+end
+
+
+;;NOTE: this information is redundant, so it is no longer
+;; used as an "final" command in experiments
+to export-transmissions-and-contaminations
+  ;;Write sums of transmissions and contaminations to file.
+  ;;Intended to be called at the end of each replicate (i.e., to be used as a "final" command).
+  ;;CAUTION: be careful with scenario names as some characters
+  ;;  are not legal for file names
+  ;;  http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx#naming_conventions
+  ;;chkchkchk use experiment name?
+  let _fname (word "out/transmissions/" base-filename ".txt")
+  carefully [file-delete _fname][]
+  file-open _fname
+  file-print "type,sum"
+  foreach table:keys transmissions [
+    file-print (word ? "," (sum table:get transmissions ?))
+  ]
+  file-close
+
+  set _fname (word "out/contaminations/" base-filename ".txt")
+  carefully [file-delete _fname][]
+  file-open _fname
+  file-print "type,sum"
+  foreach table:keys contaminations [
+    file-print (word ? "," (sum table:get contaminations ?))
+  ]
+  file-close
+end
+
+to finalize ;;currently empty
+  ;;do any final reporting from each replicate
+  ;;the following is redundant, so we no longer do it!
+  ;export-transmissions-and-contaminations
+end
+
+to-report read-params [#fname]
+  ;;Report table, map param names to default *numeric* values.
+  ;; #fname : str, the ini file path
+  let _ini table:make
+  file-open #fname
+  let _findval false
+  let _key ""
+  while [not file-at-end?] [
+    let _lin file-read-line
+    if (length _lin > 0 and item 0 _lin = "[") [
+      if (_findval) [error (word _findval " shd be false")]
+      set _findval true
+      set _key substring _lin 1 position "]" _lin  ;;extract the key
+    ]
+    if (length _lin > 0 and substring _lin 0 5 = "value") [
+      if (not _findval) [error (word _findval " shd be true")]
+      if (_key = "") [error "shd not be empty"]
+      set _findval false
+      let _val substring _lin 8 length _lin
+      ;;note that we store the value, not just the string representation
+      table:put _ini _key run-result _val
+      set _key ""
+    ]
+  ]
+  file-close
+  report _ini
+end
+

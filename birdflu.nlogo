@@ -185,6 +185,7 @@ patches-own [
 ;;;OTHER declared globals: ;;;
 globals [
   ;;; CONSTANTS (calibrated to data) ;;;
+  experiment-name   ;(str) : todo we can discard this chkchk
   N-LIVETRADERS     ;(int) : fixed number of live-bird traders (vs. endog # eggtraders)
   N-FGDS            ;(int) : small number of large free grazing duck flocks
   N-BYCHICKENS      ;(int) : large number of small backyard chicken flocks
@@ -294,11 +295,12 @@ globals [
 
   ;;; convenience tables ;;;
   days-on-field          ;(table) : map FGD who numbers to lists
-  transmissions          ;(table) : map transmission types to lists of daily numbers
+  transmissions          ;(table) : transmission type -> daily count of transmissions
   contaminations         ;(table) : map contamination types to lists of daily numbers
   transition-dates       ;(table) : map date (ticks) to list (agents due for state transition)
   ;;TODO: delete expired transitions chkchk
 
+  secnarios              ;(table) : map each scenario name to list of parameter-value pairs
 ]
 
 
@@ -318,7 +320,6 @@ to startup
 end
 
 to setup        ;; setup the display with globals, patches, agents
-  print (word "begin setup: run number " behaviorspace-run-number)
   ;; do not use clear-all! (it's a problem for our BS;
   ;; it resets **all** non-interface globals, including those set by BS,
   ;; where we are setting some of them!)
@@ -329,11 +330,12 @@ to setup        ;; setup the display with globals, patches, agents
   clear-all-plots
   clear-output
 
-  setup-globals
+  setupGlobals
   setup-roads       ;;must set up road **before** patches!
   setup-patches     ;;calls place-along-roads!
   setup-agents
-  ask fgducks [table:put days-on-field ([who] of self) (list )]  ;;initialization of table
+  ;;initialization of days-on-field table with empty list for each fgd
+  ask fgducks [table:put days-on-field who (list )]
 
   initialize-locations-file  ;;must come before initialize-infection
 
@@ -344,13 +346,12 @@ to setup        ;; setup the display with globals, patches, agents
   updatePlots   ;chkchk: plot initial state
 
   setup-visuals
-  print (word "setup complete: run number " behaviorspace-run-number)
-  test-setup
+  if (DEBUG > 0) [ test-setup ]
 end
 
 
 ;; Setup the enumerations
-to setup-globals
+to setupGlobals
   ;;sliders and switches set the following:
   ;;  baseline
   ;;  scenario
@@ -396,14 +397,12 @@ to setup-globals
   set transmissions table:make
   foreach ["road-flock" "after-visit" "visitor-flock" "eggtrader-flock"
            "livetrader-flock" "arena-fc" "fc-flock"] [? ->
-    ;; chkchkchkchk initial 0 needed??? chkchk is "visitor-flock" being used?
-    table:put transmissions ? [0]
+    table:put transmissions ? []
   ]
   set contaminations table:make
   foreach ["flock-livetrader" "flock-eggtrader" "flock-visitor"
            "flock-road" "flock-field"] [? ->
-    ;;chkchkchkchk initial 0? chkchkchk
-    table:put contaminations ? [0]
+    table:put contaminations ? []
   ]
   ;setup a flu-state transition table, to map date (ticks) to list (transitioning agents)
   set transition-dates table:make
@@ -414,7 +413,7 @@ to setup-globals
   setup-baseline
   setup-scenario
   record-params ;; record the final parameter values for this run
-end ;;setup-globals
+end ;;setupGlobals
 
 to setup-baseline
   ;; chkchk EGGTRADER-LINKS- Not here because need to set manually during runs chkchkchk
@@ -504,6 +503,72 @@ to setup-scenario  ;;observer proc
   ;;CAUTON: scenario names are incorporated in file names
   ;;  without testing; make sure they will be valid.
   ;;  (Alphanumeric is safe.)
+  let scenarios table:make
+  table:put scenarios "none" []
+  ;;;;;; ROAD-FLOCK SCENARIOS ;;;;;;
+  table:put scenarios "etlinks(low)" (list (list "etlinks-task" [-> 1]))
+  table:put scenarios "etlinks(high)" (list (list "etlinks-task" [-> 10]))
+  table:put scenarios "road-flock(high)" (list
+      ["pct-road-pen-infect" 40]
+      ["pct-road-byc-infect" 71]
+      )
+  table:put scenarios "road-flock(low)" (list
+      ["pct-road-pen-infect" 0]
+      ["pct-road-byc-infect" 29]
+      )
+  table:put scenarios "road-flock(zero)" (list
+      ["pct-road-pen-infect" 0]
+      ["pct-road-byc-infect" 0]
+      )
+  ;;;;;; VISIT SCENARIOS ;;;;;;
+  table:put scenarios "visit(veryhigh)" (list
+      ["pct-from-visit-infect" 98]
+      ["pct-to-visit-infect" 100]
+      )
+  table:put scenarios "visit(high)" (list
+      ["pct-from-visit-infect" 30]
+      ["pct-to-visit-infect" 40]
+      )
+  table:put scenarios "visit(low)" (list
+      ["pct-from-visit-infect" 5]
+      ["pct-to-visit-infect" 10]
+      )
+  table:put scenarios "visit(zero)" (list
+      ["pct-from-visit-infect" 0]
+      ["pct-to-visit-infect" 0]
+      )
+  ;;;;;; EGGTRADER SCENARIOS ;;;;;;
+  ;; (used by eggtrade experiment)
+  table:put scenarios "eggtrade(high)" (list
+      ["pct-flock-eggtrader-contam" 88]
+      ["pct-eggtrader-flock-infect" 85]
+      )
+  table:put scenarios "eggtrade(low)" (list
+      ["pct-flock-eggtrader-contam" 53]
+      ["pct-eggtrader-flock-infect" 55]
+      )
+  ;pick out the scenario
+  ; and set the parameter values for the chosen scenario
+  foreach table:get scenarios scenario [? ->
+    run (word "set " first ? " " last ?)
+  ]
+end
+
+to old-setup-scenario  ;;observer proc
+  ;;Called by `setup` *after* `setup-baseline`.
+  ;;Side effects: set specified global parameters.
+  ;;
+  ;;First we choose a baseline (`pert` or `mode`);
+  ;;then we choose a scenario to deviate from the baseline
+  ;;(As it comes last in setup, this may **re**set some values!)
+  ;;Note: use the `scenario` choser to choose a scenario;
+  ;;this proc will then set the implied parameters.
+  ;;CAUTION: a scenario comes last in setup and thus
+  ;;  OVERWRITES current values.
+  ;;  (For example, those values set by an experiment!)
+  ;;CAUTON: scenario names are incorporated in file names
+  ;;  without testing; make sure they will be valid.
+  ;;  (Alphanumeric is safe.)
   let _set-params []
   if (scenario = "none") [] ;; change no values
   ;;;;;; ROAD-FLOCK SCENARIOS ;;;;;;
@@ -516,7 +581,7 @@ to setup-scenario  ;;observer proc
   if (scenario = "etlinks(high)") [
     set _set-params
     (list
-      ;(list "etlinks-task" [[] -> [10]])
+      (list "etlinks-task" [[] -> [10]])
     )
   ]
   if (scenario = "road-flock(high)") [
@@ -586,12 +651,12 @@ to setup-scenario  ;;observer proc
     ]
   ]
   ;;set the parameter values for the chosen scenario
-  foreach _set-params [? -> run (word "set " item 0 ? " " item 1 ?)]
+  foreach _set-params [? -> run (word "set " first ? " " last ?)]
 end
 
 to record-params
   ;;record the parameter values used for the run
-  ;; (should call this *after* `set-scenario`)
+  ;; (must call this *after* `set-scenario`)
   let _filename (word "out/params/" base-filename ".txt")
   carefully [file-delete _filename] []
   file-open _filename
@@ -972,24 +1037,14 @@ end ;;setup-agents
 
 
 to setup-livetraders  ;;observer proc (called by setup-agents)
-  ;; distribute livetraders roughly evenly spaced on a circule around the center of the subdistrict
-  ;; (livetraders trade live birds)
-  let _cx ((min-pxcor + max-pxcor) / 2)
-  let _cy ((min-pycor + max-pycor) / 2)
-  let _center patch _cx _cy
-  let _radius int min (list world-width world-height) / 3
-  let _locations (list )
-  let _rotation (360 / N-LIVETRADERS)
-  let _offset (_rotation / 2)
-  foreach n-values N-LIVETRADERS [? -> ?] [? ->
-    ask _center [set _locations lput patch-at-heading-and-distance (_offset + ? * _rotation) _radius _locations]
-  ]
-  foreach _locations [? ->
-    let _location ?
-    let _okbarns barns with [not any? turtles-here]
-    ask min-one-of _okbarns [distance _location] [
-      sprout-livetraders 1 [ init-livetrader ] ;; sets homepatch
-    ]
+  ;Livetraders wll trade live birds; we want to distribute them
+  ; roughly evenly spaced on a circle arond the center of the subdistrict
+  create-livetraders N-LIVETRADERS
+  layout-circle livetraders min (list world-width world-height) / 3
+  ask livetraders [
+    let _okbarns (barns with [not any? turtles-here])
+    move-to (min-one-of _okbarns [distance myself])
+    init-livetrader ;; sets homebase
   ]
 end
 
@@ -1093,11 +1148,11 @@ to setup-duckfarms-and-owners
 end
 
 to setup-chickenfarms-and-owners
-  ;;sprout a few large chicken farms from barn patches
+  ;sprout a few large chicken farms from barn patches
   ask n-of N-CHICKEN-FARMS barns with [ not any? turtles-here ] [
     sprout-chickens 1 [ init-fmchicken ]
   ]
-  ;;set global variables to agentsets (*not* breeds)
+  ;set global variables to agentsets (*not* breeds)
   set fmchickens chickens with [biotype = "farm"]
   ask fmchickens [ add-flockowner ]
   set fmc-owners turtle-set [owner] of fmchickens
@@ -1105,7 +1160,7 @@ to setup-chickenfarms-and-owners
 end
 
 to initialize-infection
-  ;;randomly choose a flock for the initial infection
+  ;randomly choose a flock for the initial infection
   if (infection-source = "fgduck") [
     ask one-of fgducks [infect-poultry]
     stop
@@ -1245,9 +1300,13 @@ to go  ;; observer proc (the schedule; one iteration)
     print _msg
     stop
   ]
+  if (DEBUG > 0) [
+    log2file (word "run " behaviorspace-run-number ": " dayName " of week " week " is starting.")
+    log2file (word "ticks is " ticks ". ")
+  ]
   file-open locations-file file-print (word "day " (ticks + 1)) file-close
-  updateCalendar
-  ask (turtle-set fgducks fmducks byducks fmchickens) [set has-eggs? true]  ;;chkchkchk why is this in here? chkchk
+  prepareDataTables  ;append 0 to each value in tables storing transmissions and contaminations by type
+  updateFluStates    ;does scheduled state transitions (flu-state transitions)
 
   ask fgducks [go-to-field]  ;note: field-only fgducks may need a new field!
   trade-eggs  ;egg traders collect eggs; poultry owners deliver eggs to mkt
@@ -1257,32 +1316,24 @@ to go  ;; observer proc (the schedule; one iteration)
     travel-roads-to homebase
   ]
 
-  ask fgd-links [untie print (word end1 "untied for visiting")]  ;;chkchk find more elegant way to do all this
-  ask flock-owners [visit]
-  ask fgd-links [tie print (word end1 "tied after visiting")]
+  visit-neighbors
 
+  ;spread the disease:
   roads-infect-flocks
   ask fcs [infect-backyard]
-  update-flu-state  ;does all needed flu-state transitions
-  ;ask turtles with [(member? breed poultry-types) and (member? flu-state "ei")] [old-update-flu-state ]
 
-  tick  ;;note: we tick at the end of the iteration
+  tick  ;we tick *after* each iteration
   updateGUI ;; calls updatePlots, which must come before decontamination of traders, locations chkchkchk
   test-for-endsim ;;note: don't call stop here (bc then BS won't record final outcomes)
-  if (DEBUG > 0) [
-    test-go
-  ]
+  if (DEBUG > 0) [ test-go ]
 end
 
-to updateCalendar ;; observer proc
-  ;;The calendar is updated at the beginning of each iteration.
-  log2file (word "ticks is " ticks ". ")
-  if (DEBUG > 0) [
-    print (word "run " behaviorspace-run-number ": " dayName " of week " week " is starting!!")
-  ]
+to prepareDataTables ;; observer proc
+  ;start a new day: append a new zero entry to each transmission type
   foreach table:keys transmissions [? ->
     table:put transmissions ? (lput 0 table:get transmissions ?)
   ]
+  ;append a new zero entry for each contamination type
   foreach table:keys contaminations [? ->
     table:put contaminations ? (lput 0 table:get contaminations ?)
   ]
@@ -1346,14 +1397,17 @@ to set-target-field ;; fgduck proc
       ask owner [set homebase _new-target move-to homebase]
     ]
     ;; update days on field
-    let _who ([who] of self)
-    table:put days-on-field _who (lput 0 table:get days-on-field _who)
+    table:put days-on-field who (lput 0 table:get days-on-field who)
   ][
-    let _who ([who] of self)
-    let _oldlist table:get days-on-field _who
-    table:put days-on-field _who (lput (last _oldlist + 1) butlast _oldlist)
+    ;increment the final entry
+    let _newlist incrementLast table:get days-on-field who
+    table:put days-on-field who _newlist
   ]
   if (DEBUG > 5) [log2file "exit proc: set-target-field"]
+end
+
+to-report incrementLast [#lst]
+  report lput (1 + last #lst) (butlast #lst)
 end
 
 to graze-here  ;; fgduck proc
@@ -1426,7 +1480,8 @@ to travel-roads-to [#target]  ;; fgduck proc, #target is a patch
 end
 
 to risk-transmission [#type]  ;; poulty proc
-  if (member? flu-state "eir") [stop] ;;exit proc  chkchk (allow duck reinfection?)
+  if (member? flu-state "eir") [stop] ;no reinfection
+  ;todo: for a longer horizon, we might add duck reinfection?
   let _p 0
   if (#type = "eggtrader-flock") [
     set _p pct-eggtrader-flock-infect
@@ -1446,8 +1501,10 @@ to risk-transmission [#type]  ;; poulty proc
     ]
     let _penned (turtle-set byducks fmducks fmchickens) ;;chkchk
     if member? self _penned [
-      if member? self bychickens [error "dual membership not allowed"]
       set _p pct-road-pen-infect
+      if (DEBUG > 0) [
+        if member? self bychickens [error "dual membership not allowed"]
+      ]
     ]
   ]
   if (#type = "arena-fc") [
@@ -1456,24 +1513,20 @@ to risk-transmission [#type]  ;; poulty proc
   if (#type = "fc-flock") [
     set _p pct-fc-byc-infect
   ]
-  if (random-float 100 < _p) [ ;;infection spreads!
-    infect-poultry  ;; state transition
-    ;increment this period's count for this transmission type
-    ;;first, get the list of transmission
-    let _oldct table:get transmissions #type
-    ;;chkchkchk this v is ugly ...
-    if (length _oldct != ticks + 2) [error (word "Compare " length _oldct " and " ticks)]
-    ;;next, increment the last item of the list
-    let _newct lput (last _oldct + 1) butlast _oldct
-    table:put transmissions #type _newct
-  ]
-  if (_p < 1 and _p != 0) [ ;; a test for value error
+  if (DEBUG > 0 and _p < 1 and _p != 0) [ ;; a test for value error
         let _msg (word "WARN: problem probability? " #type _p)
         set _msg (word _msg " (state probabilies as pct)")
-        print _msg
-        file-open "out/birdflu-xxx.log"
-        file-print _msg
-        file-close
+        log2file _msg
+        error _msg
+  ]
+  if (random-float 100 < _p) [ ;;infection spreads!
+    infect-poultry  ;; state transition
+    ;increment the last item of the current list of transmissions of this type
+    let _newct incrementLast table:get transmissions #type
+    table:put transmissions #type _newct
+    if (DEBUG > 0 and length _newct != ticks + 1) [
+      error (word "Compare " length _newct " and " ticks)
+    ]
   ]
 end
 
@@ -1492,15 +1545,21 @@ to risk-human-contamination [#type]  ;; human proc
   if (#type = "flock-visitor") [
     set _p pct-flock-visitor-contam
   ]
+  if (DEBUG > 0 and _p < 1 and _p != 0) [ ;; a test for value error
+        let _msg (word "WARN: problem probability? " #type _p)
+        set _msg (word _msg " (state probabilies as pct)")
+        log2file _msg
+        error _msg
+  ]
   if (random-float 100 < _p) [
     set _new-until (ticks + contam-period)
   ]
   if (_new-until > _old-until) [
     set contam-until _new-until
-    file-open log-file file-show "is contaminated" file-close
     let _oldct table:get contaminations #type
-    let _newct lput (last _oldct + 1) butlast _oldct
+    let _newct lput (1 + last _oldct) butlast _oldct
     table:put contaminations #type _newct
+    log2file (word self "is contaminated") ;log for debugging
   ]
 end
 
@@ -1529,24 +1588,23 @@ to risk-ground-contamination [#type]  ;; patch proc
 end
 
 to infect-poultry ;; poultry proc; state transition
-  if not member? breed poultry-types [error (word breed " is not a poultry type")]
-  if (flu-state != "s") [error "flu-state should be 's'"]
-  set flu-state "e"     ;;chk color code this?
-  ;; latent-period is one day for all flocks
+  if (DEBUG > 0) [
+    if not member? breed poultry-types [error (word breed " is not a poultry type")]
+    if (flu-state != "s") [error "flu-state should be 's'"]
+  ]
+  set flu-state "e"
+  ; latent-period is one day for all flocks
   add-transition (ticks + latent-period) self
   ;set infection-time 0
   record-infection-location
-  log2file "is infected"
+  log2file (word self "is infected")
 end
-
 
 to add-transition [#date #agent]
   ;; initialize flu-state transitions for this date if necessary
-  if not table:has-key? transition-dates #date [
-    table:put transition-dates #date (list )
-  ]
+  let _datelst table:get-or-default transition-dates #date []
   ;; add a transition
-  table:put transition-dates #date (lput #agent table:get transition-dates #date)
+  table:put transition-dates #date (lput #agent _datelst)
 end
 
 to record-infection-location
@@ -1689,8 +1747,9 @@ end ;;END:setup-eggtraders
 
 
 to trade-eggs ;;observer proc
-  ;; having egg trading first facilitates the transmission process, since
-  ;; contam of the egg trader depends on there being infectious turtles, not infected patch.
+  ;Note that having egg trading first facilitates the transmission process, since
+  ;  contam of the egg trader depends on there being infectious turtles, not infected patch.
+  ask (turtle-set fgducks fmducks byducks fmchickens) [set has-eggs? true]
   ask eggtraders [ pickup-eggs ]
   ask (turtle-set ducks chickens) with [n-egg-delivery-days != 0] [ deliver-eggs ]
 end
@@ -1754,34 +1813,36 @@ end
 ;; Live Poultry Trading Network ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Each day of the week, a livetrader is either collecting or not,
-;; based on the number of days per week they trade (1, 2 or 3)
+;; based on the number of days per week they trade (1, 2 or 3).
 ;; There is no poultry trading network made at setup, because
 ;; unlike the egg trading network,
 ;; it will change daily based on who they have recently collectd birds from.
 ;; Each call to ``go`` , each trader that trades on the present day
-;; will form a network of the 5 nearest houses that have not yet sold
-;; birds during the 2-month iteration
+;; will form a network of the 4 nearest houses that have not yet sold
+;; birds during the previous 2-months.
 
 to trade-birds ;;observer proc
-  ;; note: only backyard duck and chicken farmers supply live birds
-  ;; Each day each livetrader determines if it is a pickup day for any contacts;
-  ;; if it is, the livetrader collects live birds.
-  ;_livetrader-pickup-days is one sub-list of LIVETRADER-PICKUP-SCHEDULE, determining who picks up today
+  ;Each day each livetrader determines if it is a pickup day for any contacts;
+  ; if it is, the livetrader collects live birds.
+  ; _livetrader-pickup-days is one sub-list of LIVETRADER-PICKUP-SCHEDULE,
+  ; which will determine who picks up today based on how many trading days.
+  ;Note: only backyard duck and chicken farmers supply live birds.
   let _livetrader-pickup-days item dayIDX LIVETRADER-PICKUP-SCHEDULE
   ask livetraders with [member? n-bird-pickup-days _livetrader-pickup-days] [
     make-livetrader-pickup-network  ;;volatile network (for realism)
     pickup-livebirds ;; includes transmission and contamination risks
   ]
   ;; clear links after the trading; the network is rebuilt each day
-  ask links with [ color = blue ] [ die ]
+  ask links with [ color = blue ] [ die ] ;chkchkchk
   if (count livebird-links > 0) [error "surprise!"]
   ;; comment: in our subdistrict, livetraders slaughter birds at homebase
   ;;   (i.e., live birds don't go to mkt)
 end
 
 to make-livetrader-pickup-network ;; livetrader proc
-  ;; This is called by *each* trader on each day s/he trades,
-  ;; so it may be called 1, 2 or 3 times each week, depending on the trader's pickup schedule.
+  ;This is called by *each* trader on each day s/he trades,
+  ; so it may be called 1, 2 or 3 times each week,
+  ; depending on the trader's pickup schedule.
   if (DEBUG > 5) [show "enter proc: make-livetrader-pickup-network"]
   ;; find *all* suppliers chk
   let _cutoff (ticks - LIVEBIRD-REPLENISH)
@@ -1789,13 +1850,17 @@ to make-livetrader-pickup-network ;; livetrader proc
     _cutoff >= livebird-selldate
   ]
   let _ct min (list n-flocks-per-pickup count _livebird-suppliers)
-  if (_ct < n-flocks-per-pickup) [log2file (word "WARNING: not enough live birds available, run number " behaviorspace-run-number)]
+  if (_ct < n-flocks-per-pickup) [
+    log2file (word "WARNING: not enough live birds available, run number "
+              behaviorspace-run-number)
+  ]
   create-livebird-links-with min-n-of _ct _livebird-suppliers [distance myself]
-  ask livebird-links [ set color blue ]
+  ask livebird-links [ set color blue ] ;chkchkchk
   if (DEBUG > 5) [show "exit proc: make-livetrader-pickup-network"]
 end
 
-to pickup-livebirds   ;; livetrader proc
+to pickup-livebirds ; livetrader proc, with transmission/contamination risk
+  ;note: must be called *after* make-livetrader-pickup-network
   let _cutoff (ticks - LIVEBIRD-REPLENISH)
   let _candidates sort-on [distance myself]
     out-link-neighbors with [livebird-selldate <= _cutoff]
@@ -1861,7 +1926,9 @@ to fight-cocks  ;;observer proc (called in ``go``)
     ;;ai: chkchkchk NOTE switching to fixed *number* of fc owners at matches!!  OK??
     ;; NOTE this still makes it so that only 2 owners from this subdistrict fight each week!
     ;; chk Add risk from by birds from other subdistricts???
-    print (word dayName ": fighting-cock matches:")
+    let _msg (word dayName ": fighting-cock matches:")
+    log2file _msg
+    if (0 = behaviorspace-run-number) [ print _msg]
   ;; chkchkchk we need to determine how to make this a chance of infection at the arena
   ;; becuase when this is TRUE, the arena infects a FC every time.
   ;;**************20120410 AB Altered the transmission procs of FC a bit below
@@ -1889,11 +1956,23 @@ to fight-at [#arena #fcs]  ;observer proc
   ]
 end
 
-;;;;;;;;;;;;;;;;;;
-;;Backyard Procs;;
-;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;
+;;; Visit Procs ;;;
+;;;;;;;;;;;;;;;;;;;
 
-to visit ;;  poultry owner procedure
+to visit-neighbors ;observer proc, called by `go`
+  ask fgd-links [
+    untie
+    if (DEBUG > 5) [print (word end1 "untied for visiting")]
+  ]  ;not beautiful chk
+  ask flock-owners [visit]
+  ask fgd-links [
+    tie
+    if (DEBUG > 5) [print (word end1 "tied after visiting")]
+  ]
+end
+
+to visit ;poultry owner proc, called by `visit-neighbors`
   ;; all poultry owners can move to a few neighbors daily for a visit
   ;; (number of visits per day determined by a binomial at initialization) chkchk
   if not member? breed human-types [error "should be a human"]
@@ -1972,29 +2051,26 @@ end
 ;;Transmission Procs;;
 ;;;;;;;;;;;;;;;;;;;;;;
 
-to update-flu-state ;;time-based flu-state transitions (NOT initial infection)
-  let _transitions (list ) ;default for this period's transitions
-  if table:has-key? transition-dates ticks [
-    set _transitions table:get transition-dates ticks
-  ]
-  foreach _transitions [? ->
-    let _flock ?
-    let _breed ([breed] of _flock)
-    let _is-chicken? member? _breed (list chickens fcs)
-    let _is-duck? (_breed = ducks)
-    if not (_is-chicken? or _is-duck?) [error "unidentified flock type"]
+to updateFluStates ;;time-based flu-state transitions
+  ;empty default for this period's transitions:
+  let _transitions table:get-or-default transition-dates ticks []
+  foreach _transitions [_flock ->
     let _state [flu-state] of _flock    ;;current state
-    if not (member? _state ["e" "i"]) [
+    if ((DEBUG > 0) and not (member? _state ["e" "i"])) [
       error (word "flu-state " _state " is not valid for transition")
     ]
     if (_state = "e") [
       ask _flock [ set flu-state "i"]
       add-transition (ticks + [shedding-period] of _flock) _flock
     ]
+    let _breed ([breed] of _flock)
+    let _is-chicken? member? _breed (list chickens fcs)
+    let _is-duck? (_breed = ducks)
+    if not (_is-chicken? or _is-duck?) [error "unidentified flock type"]
     if (_state = "i") [
       if _is-chicken? [ ;; chickens had a 4 day shedding period.
         ask _flock [set flu-state "d"]
-        ;;chkchk why are we not just killing them off? just to count them
+        ;chk don't ask them to `die` because we want to count them
       ]
       if _is-duck? [ ;; ducks had a 7 day shedding period.
         ask _flock [set flu-state "r"]
@@ -2245,6 +2321,7 @@ to displayFlocks
       set color gray
     ]
   ]
+  ;todo: color-code "e"?  maybe
 end
 
 to updatePlots
@@ -2512,9 +2589,9 @@ days
 
 BUTTON
 5
-5
+290
 65
-38
+323
 NIL
 Setup
 NIL
@@ -2529,9 +2606,9 @@ NIL
 
 BUTTON
 70
-5
+290
 130
-38
+323
 NIL
 Go
 T
@@ -2545,10 +2622,10 @@ NIL
 0
 
 BUTTON
-135
-5
-195
-38
+140
+290
+200
+323
 Go Once
 go
 NIL
@@ -2627,10 +2704,10 @@ n-cooperatives
 0
 
 CHOOSER
-1165
-580
-1303
-625
+100
+245
+192
+290
 scenario
 scenario
 "none" "eggtrade(high)" "eggtrade(low)" "road-flock(high)" "road-flock(low)" "road-flock(zero)" "visit(veryhigh)" "visit(high)" "visit(low)" "visit(zero)"
@@ -2638,9 +2715,9 @@ scenario
 
 PLOT
 5
-250
+385
 247
-400
+535
 Contamination
 time
 totals
@@ -2658,10 +2735,10 @@ PENS
 "Live Traders" 1.0 0 -5825686 true "" "plot count livetraders with [contam-until > ticks]"
 
 PLOT
-5
-405
-246
-555
+955
+565
+1285
+700
 FGD Infection State
 time
 totals
@@ -2678,10 +2755,10 @@ PENS
 "Recovered" 1.0 0 -5987164 true "" "plot count fgducks with [flu-state = \"r\"]"
 
 PLOT
-5
+955
+425
+1285
 560
-245
-710
 Backyard Chicken Flocks
 time
 totals
@@ -2735,8 +2812,8 @@ MONITOR
 55
 1060
 100
-chk egg traders
-count eggtraders with [ all? in-link-neighbors [egg-type = \"chicken\"]]
+chkn egg traders
+count eggtraders with [ all? in-link-neighbors [breed = chickens]]
 0
 1
 11
@@ -2747,7 +2824,7 @@ MONITOR
 1165
 100
 duck egg traders
-count eggtraders with [ all? in-link-neighbors [egg-type = \"duck\"]]
+count eggtraders with [all? in-link-neighbors [breed = ducks]]
 0
 1
 11
@@ -2757,8 +2834,8 @@ MONITOR
 55
 1320
 100
-chk & duck egg traders
-count eggtraders with [ any? (in-link-neighbors with [egg-type = \"duck\"]) and any? (in-link-neighbors with [egg-type = \"chicken\"])]
+chkn-duck egg traders
+count eggtraders with [ any? (in-link-neighbors with [breed = ducks]) and any? (in-link-neighbors with [breed = chickens])]
 0
 1
 11
@@ -2804,10 +2881,10 @@ PENS
 "Dead/Recovered" 1.0 0 -7500403 true "" ""
 
 PLOT
-955
-420
-1285
-575
+0
+540
+245
+695
 Flocks Affected (Post-shedding)
 time
 proportion
@@ -2825,10 +2902,10 @@ PENS
 "Farms" 1.0 0 -6459832 true "" ""
 
 PLOT
-955
-575
-1155
-725
+265
+705
+465
+855
 rai available
 num fields
 total rai
@@ -2843,10 +2920,10 @@ PENS
 "rai01" 1.0 0 -16777216 true "" ""
 
 CHOOSER
-1165
-650
-1303
-695
+5
+245
+97
+290
 baseline
 baseline
 "pert" "mode"
@@ -3262,7 +3339,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.0.1
+NetLogo 6.0.2
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@

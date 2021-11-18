@@ -2,6 +2,38 @@
 ;;     UTILITIES (for birdflu project)      ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; return a result (value) based on the probabilities (defined by #weights) of each value
+;; written by Nick Bennet 2009 http://groups.yahoo.com/group/netlogo-users/message/9091 
+;; (But nowadays one should use the rnd extension.)
+to-report random-weighted [#values #weights]
+  let _selector (random-float sum #weights)
+  let _running-sum 0
+  (foreach #values #weights [[?1 ?2] ->
+    set _running-sum (_running-sum + ?2)
+    if (_running-sum > _selector) [ report ?1 ]
+  ])
+end
+
+
+;BEGIN:randomBernoulli;
+to-report randomBernoulli [
+  #p ;(float): the probablity of reporting 1
+  ] ;->(integer): 1 with probability #p, else 0
+  report ifelse-value (random-float 1.0 < #p) [1] [0]
+end
+;END:randomBernoulli;
+
+;BEGIN:randomBinomial;
+to-report randomBinomial [
+  #n ;(int): #n > 0
+  #p ;(float): 0 <= p <= 1
+  ] ; -> integer: a single draw from a binomial(n,p) distribution.
+  let _ct 0
+  repeat #n [set _ct _ct + randomBernoulli #p]
+  report _ct
+end
+;END:randomBinomial;
+
 to zerosToTaskDefaults [
 #name  ;(string) : name of global variable
 #table ;(table) : map names (strings) to tasks
@@ -12,35 +44,35 @@ to zerosToTaskDefaults [
   ;; We will use an imperfect signal that variable is only declared: a value of 0.
   ;; Note: this means we MUST NOT (!!) use BS to set 0 values on non-interface globals
   ;; (i.e., those globals that have non-zero default values).  Create scenario instead.
-  if (run-result #name != 0) [error "current value must be 0"]
+  if (runresult #name != 0) [error "current value must be 0"]
   let _tval table:get #table #name
-  if (not is-reporter-task? _tval) [error "use this proc only for reporter tasks"]
+  if (not is-anonymous-reporter? _tval) [error "use this proc only for reporter tasks"]
   type (word #name ":" _tval " ")
   run (word "set " #name " _tval")
 end
 
 to zerosToNumericDefaults [
-#name  ;(string) : name of global variable
-#table ;(table) : map names (strings) to values
-]
+  #name  ;(string) : name of global variable
+  #table ;(table) : map names (strings) to values
+  ]
   ;; Keep in mind that the experiment has already set its values.
   ;; We do not want to override the experiment values!
   ;; Here we are trying to set defaults only when BS has not assigned a value.
   ;; We will use an imperfect signal that variable is only declared: a value of 0.
   ;; Note: this means we MUST NOT (!!) use BS to set 0 values on non-interface globals
-  ;; (i.e., those globals that have non-zero default values).  Create scenario instead.
-  if (run-result #name = 0) [
+  ;; (i.e., those globals that have non-zero default values).  Create a scenario instead.
+  if (runresult #name = 0) [
     let _tval table:get #table #name
-    type (word #name ":" _tval " ")
+    print (word #name ":" _tval " ")
     run (word "set " #name " " _tval)
   ]
 end
 
 to-report make-filename [
-#experiment ;(string) : the experiment name
-#scenario   ;(string) : the scenario name
-#run        ;(int) : the replicate number
-]
+  #experiment ;(string) : the experiment name
+  #scenario   ;(string) : the scenario name
+  #run        ;(int) : the replicate number
+  ]
   let _fname #experiment
   if (_fname = 0 or _fname = "") [
     set _fname (word baseline)
@@ -61,26 +93,12 @@ to-report make-filename [
   report _fname
 end
 
-to log2file [#str]
-  file-open log-file
-  file-show #str
-  file-close
-end
-
-to-report pair-with [#x #ylst]
-  ;;Return list; pairs `#x` with each item of `#ylst`
-  ;; `#x` : object
-  ;; `#ylst` : list
-  ;; :note: used by `list-product`
-  report map [(list #x ?)] #ylst
-end
-
-to-report list-product [#xlst #ylst]
-  ;;Report list of two-element lists;
-  ;;all possible (x,y) including repeats
-  ;; `#xlst` : list
-  ;; `#ylst` : list
-  report reduce sentence (map [pair-with ? #ylst] #xlst)
+to log2file [#level #str]
+  if (DEBUG >= #level) [
+    file-open log-file
+    file-show #str
+    file-close
+  ]
 end
 
 to-report disjoint-subsets [#tset #sizes]
@@ -93,8 +111,8 @@ to-report disjoint-subsets [#tset #sizes]
   let _tlst [self] of #tset  ;; cast to list (in random order)
   ;;next, create the cumulative sum of the size (but start with a 0)
   ;;(note the trick of inserting the *list* containing zero into the list)
-  let _psums reduce [lput (?2 + last ?1) ?1] fput [0] #sizes
-  report (map [turtle-set sublist _tlst ?1 ?2] butlast _psums butfirst _psums)
+  let _psums reduce [[?1 ?2] -> lput (?2 + last ?1) ?1] fput [0] #sizes
+  report (map [[?1 ?2] -> turtle-set sublist _tlst ?1 ?2] butlast _psums butfirst _psums)
 end
 
 to-report weighted-integer-partition [#n #wts]
@@ -106,23 +124,23 @@ to-report weighted-integer-partition [#n #wts]
   ;;  weights determine probability of being in a part
   ;;Comment: allows zeros! (Unlike a true integer partition.)
   if (#n <= 0 or #n != round #n) [error "first argument must be a positive integer"]
-  if (0 < length filter [? < 0] #wts) [error "weights must be nonnegative"]
-  if (empty? filter [? > 0] #wts) [error "at least one weight must be positive"]
+  if (0 < length filter [? -> (? < 0)] #wts) [error "weights must be nonnegative"]
+  if (empty? filter [? -> (? > 0)] #wts) [error "at least one weight must be positive"]
   ;;first try: maybe the weights constitute a partition of #n
-  let _rndwts map [round ?] #wts
+  let _rndwts map [? -> round ?] #wts
   if (#n = sum _rndwts) [ ;;-> we already have an integer partition
     report _rndwts
   ]
   ;;second try: maybe the scaled weights constitute a partition of #n
   let _sumwts sum #wts
-  let _scaledwts map [round (? * #n / _sumwts)] #wts
+  let _scaledwts map [? -> round (? * #n / _sumwts)] #wts
   if (#n = sum _scaledwts) [ ;;-> we already have an integer partition
     report _scaledwts
   ]
   ;; remaining case: use floor to get a first attempt at a partition,
   ;; and then allocate the leftover
-  let _result map [floor (? * #n / _sumwts)] #wts
-  let _idxlst n-values (length #wts) [?]
+  let _result map [? -> floor (? * #n / _sumwts)] #wts
+  let _idxlst n-values (length #wts) [? -> ?]
   while [sum _result < #n] [
     let _idx random-weighted _idxlst #wts
     set _result replace-item _idx _result (1 + item _idx _result)
@@ -130,22 +148,6 @@ to-report weighted-integer-partition [#n #wts]
   report _result
 end
 
-to-report random-binomial [#n #p] ;; written by Seth Tisue
-  ;;Return integer: a single draw from a binomial distribution.
-  ;;Inputs: postive integer #n and probability of success #p
-  report length filter [? < #p] n-values #n [random-float 1]
-end
-
-;; return a result (value) based on the probabilities (defined by #weights) of each value
-;; written by Nick Bennet 2009 http://groups.yahoo.com/group/netlogo-users/message/9091 
-to-report random-weighted [#values #weights]
-  let _selector (random-float sum #weights)
-  let _running-sum 0
-  (foreach #values #weights [
-    set _running-sum (_running-sum + ?2)
-    if (_running-sum > _selector) [ report ?1 ]
-  ])
-end
 
 ;; report a list of strings
 ;; produced by splitting a string on a separator
@@ -175,11 +177,11 @@ to-report patch-near-link? [#patch #link]
   let result true
   ask [both-ends] of #link [
     if (patch-here != #patch) [
-      let angle abs (subtract-headings towards #patch towards [other-end] of #link)
-      ifelse (angle > 90) [
+      let _angle abs (subtract-headings towards #patch towards [other-end] of #link)
+      ifelse (_angle > 90) [
         set result false
       ] [
-        set dist (sin angle) * distance #patch
+        set dist (sin _angle) * distance #patch
         if (dist > max-distance) [set result false]
       ]
     ]
@@ -202,8 +204,8 @@ to-report random-pert [#minval #likeval #maxval]
 end
 
 
-;;NOTE: this information is redundant, so it is no longer
-;; used as an "final" command in experiments
+;;NOTE: this information is redundant, but it is still included
+;; used as an "final" command in experiments ... chkchk
 to export-transmissions-and-contaminations
   ;;Write sums of transmissions and contaminations to file.
   ;;Intended to be called at the end of each replicate (i.e., to be used as a "final" command).
@@ -215,7 +217,7 @@ to export-transmissions-and-contaminations
   carefully [file-delete _fname][]
   file-open _fname
   file-print "type,sum"
-  foreach table:keys transmissions [
+  foreach table:keys transmissions [? ->
     file-print (word ? "," (sum table:get transmissions ?))
   ]
   file-close
@@ -224,7 +226,7 @@ to export-transmissions-and-contaminations
   carefully [file-delete _fname][]
   file-open _fname
   file-print "type,sum"
-  foreach table:keys contaminations [
+  foreach table:keys contaminations [? ->
     file-print (word ? "," (sum table:get contaminations ?))
   ]
   file-close
@@ -237,6 +239,7 @@ to finalize ;;currently empty
 end
 
 to-report read-params [#fname]
+  print "ENTER: read-params"
   ;;Report table, map param names to default *numeric* values.
   ;; #fname : str, the ini file path
   let _ini table:make
@@ -255,12 +258,47 @@ to-report read-params [#fname]
       if (_key = "") [error "shd not be empty"]
       set _findval false
       let _val substring _lin 8 length _lin
+      print (word "val is " _val)
       ;;note that we store the value, not just the string representation
-      table:put _ini _key run-result _val
+      table:put _ini _key runresult _val
       set _key ""
     ]
   ]
   file-close
   report _ini
+  print "EXIT: read-params"
+end
+ 
+;miscellanea
+
+to-report recursiveFibonacci [
+  #n ;(int): positive integer, the number of terms
+  ];-> (list): `#n` Fibonacci terms (starting at 0)
+  if (#n != int abs #n) [error "input a positive integer"]
+  if (#n = 0) [report []]
+  if (#n = 1) [report [0]]
+  if (#n = 2) [report [0 1]]
+  let f1 (recursiveFibonacci (#n - 1))
+  let x_1 last f1
+  let x_2 last butlast f1
+  report lput (x_2 + x_1) f1
+end
+
+to-report iterativeFibonacci [
+  #n ;(int): positive integer, the number of terms
+  ];-> (list): `#n` Fibonacci terms (starting at 0)
+  if (#n != int abs #n) [error "input a positive integer"]
+  if (#n = 0) [report []]
+  if (#n = 1) [report [0]]
+  let x_2 0
+  let x_1 1
+  let fibs (list x_2 x_1)
+  repeat (#n - 2) [
+    let x (x_2 + x_1)
+    set fibs (lput x fibs)
+    set x_2 x_1
+    set x_1 x
+  ]
+  report fibs
 end
 

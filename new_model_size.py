@@ -1,6 +1,6 @@
 """
 We are going to take the original intersection data
-and scale up the world by a factor of 5.
+and scale up the world to match the NetLogo model extent.
 Note: don't change the road data,
 which connects intersections based on their integer ids.
 Comment: larger scale factor will exponentially slow setup.

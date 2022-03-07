@@ -1,9 +1,10 @@
+;; A NetLogo model of an SEIR+network model of birdflu transmission in Thailand.
+;; Version: 1.1.0
+;;
 ;; author: Amanda Beaudoin and Alan G. Isaac
 ;;         (authors are in alphabetical order)
-;; email: beau0209@umn.edu and aisaac@american.edu
+;; email: <amanda.beaudoin AT state.mn.us> and <aisaac AT american.edu>
 ;;
-;; Code for an SEIR+network model of birdflu transmission in Thailand.
-;; Version: 1.0.0
 ;; NOTE: run model from a folder that has an `out` subfolder, which
 ;; in turn must have two subfolders: `locations`, and `log`.
 ;; REQUIRES: Netlogo 6.1+
@@ -16,18 +17,21 @@
 ;; - local variables defined as procedure formal arguments begin with `#`
 ;; - variables beginning with `pct` should be an integer percentage
 ;;
+;; ALERT:
+;;  refactoring should attend to code marked with alert
+;;
 ;; TODO:
-;; - fix timing chkchkchk
-;; - add sampling regime for detection/destruction
 ;; - document colors and shapes
-;; - add non-poultry-related households?
-;; - move plot code inside plots
+;; - add sampling regime for detection/destruction
+;; - add non-poultry-related households
+;; - move some plot code inside plots
+;; - some items marked in code
 
 __includes ["utilities.nls"]
 extensions [table nw]
 
 ;type declarations
-; NOTE: the GUI z-order is determined by declaration order
+; NOTE: z-order in the GUI is determined by declaration order
 ;;declare road-related types
 undirected-link-breed [road-links road-link]           ;; link intersections with roads
 breed [intersections intersection]                     ;; road intersections
@@ -44,35 +48,34 @@ breed [flock-owners flock-owner]
 breed [eggtraders eggtrader]
 breed [livetraders livetrader] ;live poultry traders
 
-;;attributes common to all types
+;;attributes common to all human types
 turtles-own [
-  contam-until   ;; day contamination ends
-  contam-period  ;; set to human-contam-period for humans)
+  contam-until   ;;Integer, day contamination ends
+  contam-period  ;;Integer, length of contamination potential
                  ;; (can contaminate if contam-period>0)
-  homebase           ;(patch): home base:
-                 ;  barn for FGD flock; house/yard for backyard poultry
-                 ;  house/yard for fighting cocks;
-                 ;  house/slaughterhouse for local traders
+                 ;; (set to human-contam-period for humans)
+  homebase       ;;Patch, the home base:
+                 ;;  barn for FGD flock; house/yard for backyard poultry
+                 ;;  house/yard for fighting cocks;
+                 ;;  house/slaughterhouse for local traders
 ]
 
 fcs-own [
   ;fighting-cock-specific attributes
   practice-fight-week         ;;Integer; 0|1 (even or odd weeks)
-  target-match-arena          ;;patch, this fc's match arena
-  target-practice-arena       ;;patch, this fc's practice arena
+  target-match-arena          ;;Patch, this fc's match arena
+  target-practice-arena       ;;Patch, this fc's practice arena
   ;shared poultry attributes
-  owner                       ;; turtle, the owner of the fgd flock
+  owner                       ;;Turtle, the owner of the fgd flock
   shedding-period             ;;Integer, number of days
-  flu-state                   ;;String; "s" | "e" | "i" | "d"
-  ;infection-time           ;; "days" since infection; increment each iteration (i.e., day)
-  ;ai: ^ no longer used
+  flu-state                   ;;String {"s" | "e" | "i" | "d"}
 ]
 
 ducks-own [
   ;duck-flock-specific attributes
-  target-field              ;;patch; a harvested rice field (i.e., a dayfield)
+  target-field              ;;Patch; a harvested rice field (i.e., a dayfield)
   target-road-access
-  field-only?
+  field-only?               ;;Boolean, whether to overnight on field
   ;shared flock attributes (chickens and ducks, but not fcs)
   biotype                   ;;String, "fg" | "pen" | "farm"  (remember, byducks are penned)
   n-birds                   ;;Integer, number of birds in flock (to determine grazing consumption)
@@ -83,31 +86,27 @@ ducks-own [
   n-egg-delivery-days       ;;Integer, number of days per week that flock delivers eggs
   meat-delivery-days        ;;Integer, number of days per week that flock delivers meat (not currently used)
   ;shared poultry attributes
-  owner                    ;; turtle, the owner of the flock
+  owner                     ;;Turtle, the (human) owner of the flock
   shedding-period
-  flu-state                ;(string) : "s" | "e" | "i" | "r" | "d"
-  ;infection-time           ;(int) : "days" since infection; Increases by one day with each `go`.
-  ;ai: ^ no longer used
+  flu-state                 ;;String {"s" | "e" | "i" | "r" | "d"}
 ]
 
 chickens-own [
   ;type-specific attributes:
   ; none, although note that bychickens are not penned
   ;shared flock attributes (chickens and ducks, but not fcs)
-  biotype                  ;(str): "fg" | "by" | "farm"  (remember, bychickens are *not* penned)
-  n-birds                  ;(int): number of birds in the flock (not currently used)
-  has-eggs?                ;; eggs are available for pickup
+  biotype                  ;;String, "fg" | "by" | "farm"  (remember, bychickens are *not* penned)
+  n-birds                  ;;Integer, number of birds in the flock (not currently used)
+  has-eggs?                ;;Boolean, eggs are available for pickup
   n-egg-pickup-days
   n-onsite-eggtraders      ;; number of eggtraders that come to flock to pick up eggs
   target-egg-market
   n-egg-delivery-days      ;; number of days per week that flock delivers eggs
   meat-delivery-days       ;; number of days per week that flock delivers meat (not currently used)
   ;shared poultry attributes
-  owner                    ;; turtle, the owner of the flock
+  owner                    ;;Turtle, the (human) owner of the flock
   shedding-period
-  flu-state                ;(string) : "s" | "e" | "i" | "r" | "d"
-  ;infection-time           ;; "days" since infection; Increases by one day with each step (`go`).
-  ;ai: ^ no longer used
+  flu-state                ;;String {"s" | "e" | "i" | "r" | "d"}
 ]
 
 flock-owners-own [
@@ -124,7 +123,7 @@ flock-owners-own [
 eggtraders-own [
   ;type-specific attributes:
   n-eggtrader-links
-  egg-type           ;unused? chkchk
+  egg-type           ;;alert: currently unused
   target-egg-market  ;; one of the three markets
   ;shared worker attributes
   n-visits
@@ -142,16 +141,16 @@ livetraders-own [
 ]
 
 road-links-own [
-  roadtype     ;;string, one of: "highway" "major_road" "loose_road" "small_road" "field_road"
-  road-patches ;;patch set, patches along road-link
+  roadtype     ;;String, one of: "highway" "major_road" "loose_road" "small_road" "field_road"
+  road-patches ;;Patch[1..*], patch set of patches along road-link
 ]
 
 
 patches-own [
   ;; rai used as rough measure of productive capacity for rice fields:
-  rai                       ;; number (area in rai; 1 rai =1,600 m^2)
-  field-patches             ;; an agentset of patches; ``nobody`` for all but access fields
-  field-num                 ;; nonnegative integer; unique field identifier
+  rai                       ;;Number, area in rai (1 rai =1,600 m^2)
+  field-patches             ;;Patch[*], an agentset of patches, empty for all but access fields
+  field-num                 ;;Integer {nonnegative}, unique field identifier
   field-state               ;; "" | "harvested" | "growing" | "fallow"
                             ;; - harvested: the fields that duck flocks move to
                             ;; - growing: ducks do not graze in these fields
@@ -159,8 +158,9 @@ patches-own [
   occupant                  ;; field is the target of occupant (who may not always be physically present)
 
   ;; patches will be contaminated if next to a road with infectious ducks passing by; rice field can be contaminated
-  pcontam-until             ;; day contamination ends
-  pcontam-period            ;; set to field-contam-period or road-contam-period (chk cd use patch type...)
+  pcontam-until             ;;Integer, day patch contamination ends
+  pcontam-period            ;;Integer, set to field-contam-period or road-contam-period
+                            ;  (chk nicer to use patch type?)
   patch-type                ;;ricefield, barn, market, practice-arena, match-arena, etc
   road-access               ;;closest `intersection`
 ]
@@ -174,10 +174,10 @@ patches-own [
 
 ;;;PARAMETERS:
 ;;; globals declared in choosers: ;;;
-  ;baseline ;;(str) : "mode" (default) | "pert"
-  ;infection-source ;(str) : "fgduck" | "farm" | "byduck" | "bychicken"
-  ;scenario ;;(str) : the scenario name
-  ;n-cooperatives   ;(int) number of central egg cooperatives (affects egg delivery behavior)
+  ;baseline ;;;String {"mode" | "pert"}, (mode is default) 
+  ;infection-source ;;String {"fgduck" | "farm" | "byduck" | "bychicken"}
+  ;scenario ;;;String, the scenario name
+  ;n-cooperatives   ;;Integer, number of central egg cooperatives (affects egg delivery behavior)
 ;;; globals declared in sliders: ;;;
   ;prop-fgd-barntofield
   ;shedding-period-duck   ;; this is the length of the shedding period in days for ducks
@@ -185,32 +185,31 @@ patches-own [
 ;;;OTHER declared globals: ;;;
 globals [
   ;;; CONSTANTS (calibrated to data) ;;;
-  experiment-name   ;(str) : todo we can discard this chkchk
   ;humans
-  N-LIVETRADERS     ;(int) : fixed number of live-bird traders (vs. endog # eggtraders!)
-  n-flocks-per-pickup-ltrdr ;(int) : number of flocks the livetrader buys from each day s/he trades
+  N-LIVETRADERS     ;;Integer, fixed number of live-bird traders (vs. endog # eggtraders!)
+  n-flocks-per-pickup-ltrdr ;;Integer, number of flocks the livetrader buys from each day s/he trades
   ;poultry:
-  N-FGDS            ;(int) : small number of large free grazing duck flocks
-  N-BYCHICKENS      ;(int) : large number of small backyard chicken flocks
-  N-FCS             ;(int) : large number of fighting cocks
-  N-BYDUCKS         ;(int) : large number of small backyard duck flocks
-  N-DUCK-FARMS      ;(int) : small number of large duck farms
-  N-CHICKEN-FARMS   ;(int) : small number of large layer-chicken farms
-  RAI-PER-DUCK      ;(number) : per duck daily consumption rate (as "area" consumed)
-  LIVEBIRD-REPLENISH ;(int) : days to replenish livebird supply after sale
-  meat-eggs-both-byd ;(list) : the number of byduck flocks producing only meat, only eggs, or both
+  N-FGDS             ;;Integer, small number of large free grazing duck flocks
+  N-BYCHICKENS       ;;Integer, large number of small backyard chicken flocks
+  N-FCS              ;;Integer, large number of fighting cocks
+  N-BYDUCKS          ;;Integer, large number of small backyard duck flocks
+  N-DUCK-FARMS       ;;Integer, small number of large duck farms
+  N-CHICKEN-FARMS    ;;Integer, small number of large layer-chicken farms
+  RAI-PER-DUCK       ;;Float, per duck daily consumption rate (as "area" consumed)
+  LIVEBIRD-REPLENISH ;;Integer, days to replenish livebird supply after sale
+  meat-eggs-both-byd ;;List, the number of byduck flocks producing only meat, only eggs, or both
   ;land use:
-  N-BARNS           ;(int) : large number of patches that are barns (i.e., poultry-owning households or farms)
-  N-PRACTICE-ARENAS ;(int) : number of patches that are practice arenas
-  N-MATCH-ARENAS    ;(int) : number of patches that are practice arenas
-  N-MARKETS         ;(int) : number of patches that are practice arenas
+  N-BARNS            ;;Integer, large number of patches that are barns (i.e., poultry-owning households or farms)
+  N-PRACTICE-ARENAS  ;;Integer, number of patches that are practice arenas
+  N-MATCH-ARENAS     ;;Integer, number of patches that are practice arenas
+  N-MARKETS          ;;Integer, number of patches that are practice arenas
 
   ;;; land-use patch sets: assignment to these must be finalized in setup
-  rice-fields             ;; field patches can be in 3 states; components of larger rice fields
-  access-fields           ;; rice-field patches that provide field access
-  barns                   ;; the patches that are barns
-  match-arenas            ;; arenas for fighting cock matches
-  practice-arenas         ;; arenas for fighting cock practice
+  rice-fields        ;; field patches can be in 3 states; components of larger rice fields
+  access-fields      ;; rice-field patches that provide field access
+  barns              ;; the patches that are barns
+  match-arenas       ;; arenas for fighting cock matches
+  practice-arenas    ;; arenas for fighting cock practice
   markets
   cooperatives
   out-of-subdistrict-patches ;; patches representing areas outside of our modeled subdistrict
@@ -224,7 +223,7 @@ globals [
   fmc-owners             ;; chicken farm owners
   byc-owners             ;; backyard chicken owners (move w/out poultry to other households, market, arena, etc)l
   fc-owners              ;; fighting cock owners (some byc-owners are also fc owners)
-  farm-owners            ;; owners of *large* poultry farms (currently unused) chk
+  farm-owners            ;; owners of *large* poultry farms
 
   ;; flock subtypes
   fgducks                ;; free grazing ducks (ducks with [biotype = "fg"])
@@ -241,12 +240,12 @@ globals [
   poultry-types          ;; flock-types + fighting cocks
 
   ;;; key duration parameters, in days
-  latent-period          ;(int) : duration of the viral latent period (common to all flocks)
-  road-contam-period     ;(int) : duration after contamination that the road will pose risks
-  human-contam-period    ;(int) : duration after contamination (by infected birds) that traders pose risks
-  field-contam-period    ;(int) : duration after contamination (by infected fgd) that fields pose risks
+  latent-period          ;;Integer, duration of the viral latent period (common to all flocks)
+  road-contam-period     ;;Integer, duration after contamination that the road will pose risks
+  human-contam-period    ;;Integer, duration after contamination (by infected birds) that traders pose risks
+  field-contam-period    ;;Integer, duration after contamination (by infected fgd) that fields pose risks
 
-  ;;contaimination/infection probabilities (as pct) following a risky event
+  ;;contamination/infection probabilities (as pct) following a risky event
   pct-flock-field-contam      ;; flock contaminates field
   pct-flock-road-contam       ;; flock contaminates road
   pct-flock-eggtrader-contam  ;; eggtrader contaminated when getting eggs from contaminated premises
@@ -263,10 +262,11 @@ globals [
   pct-road-pen-infect         ;; road infects penned duck or farmed layer flock
 
   ;visiting parameters
-  n-nbrs                 ;(int): positive number of other humans a human can visit (size of the social circle)
-  visit-radius           ;(float): positive radius from which we select neighbors to visit (chkchk units)
-  n-visits-task          ;(task): sets number of visits per day by humans to other humans' homebase patches (scenario-based task!)
-  etlinks-task           ;(task): sets the number of links (suppliers) an eggtrader can service
+  n-nbrs                 ;;Integer, positive number of other humans a human can visit (size of the social circle)
+  visit-radius           ;;Float, positive radius from which we select neighbors to visit
+                         ;  (alert: be careful about the units)  todo: set physical units
+  n-visits-task          ;;Task, sets number of visits per day by humans to other humans' homebase patches (scenario-based task!)
+  etlinks-task           ;;Task, sets the number of links (suppliers) an eggtrader can service
 
   ;odds and ends
   pct-fgd-deliver        ;; number, the percentage of FGD flocks that deliver to market (if no cooperative)
@@ -282,26 +282,26 @@ globals [
   n-bird-pickup-days-ltrdr-task
 
   ;;; calendar constants  ;;;
-  VISIT-SCHEDULE             ;(list): [[int]] specifies for each day of the week who will do live-bird pickup
-  LIVETRADER-PICKUP-SCHEDULE ;(list): [[int]] specifies for each day of the week who will do live-bird pickup
-  EGGTRADER-PICKUP-SCHEDULE  ;(list): [[int]] specifies for each day of the week which flocks want egg pickup
-  DAY-NAMES                  ;(list): [str] (days of the week)
+  VISIT-SCHEDULE             ;;List, [[int]] specifies for each day of the week who will do live-bird pickup
+  LIVETRADER-PICKUP-SCHEDULE ;;List, [[int]] specifies for each day of the week who will do live-bird pickup
+  EGGTRADER-PICKUP-SCHEDULE  ;;List, [[int]] specifies for each day of the week which flocks want egg pickup
+  DAY-NAMES                  ;;List, [str] (days of the week)
 
   ;;; filenames ;;;
-  base-filename               ;(string) : base filename for current replicate
-  locations-file              ;; string, name of file to write location data
-  log-file                    ;(string) : filename for logging info about this run
+  base-filename               ;;String, base filename for current replicate
+  locations-file              ;;String, name of file to write location data
+  log-file                    ;;String, filename for logging info about this run
 
   setupComplete?
-  runsim?                     ;(boolean) : for simulation control
-  stop-sim-reason             ;(string) : diagnostic msg
-  DEBUG                       ;(int) : global DEBUG level
+  runsim?                     ;;Boolean, for simulation control
+  stop-sim-reason             ;;String, diagnostic msg
+  DEBUG                       ;;Integer, global DEBUG level
 
   ;;; convenience tables ;;;
-  days-on-field          ;(table) : map FGD who numbers to lists of days on field count for each field
-  transmissions          ;(table) : transmission type -> daily count of transmissions
-  contaminations         ;(table) : map contamination types to lists of daily numbers
-  transition-dates       ;(table) : map date (ticks) to list (agents due for state transition)
+  days-on-field          ;;Table, map FGD who numbers to lists of days on field count for each field
+  transmissions          ;;Table, transmission type -> daily count of transmissions
+  contaminations         ;;Table, map contamination types to lists of daily numbers
+  transition-dates       ;;Table, map date (ticks) to list (agents due for state transition)
   ;;TODO: delete expired transitions chkchk
 
   infecteds ;list of infected flocks (for debugging only)
@@ -321,6 +321,13 @@ to startup
   set-default-shape flock-owners "person"
   set-default-shape ducks "duck"
   set-default-shape chickens "backyard"  ;;chkchk
+  set scenario "none"
+  set forbid-fcs false
+  set baseline "pert"
+  set n-cooperatives 0
+  set prop-fgd-barntofield 0.6
+  set shedding-period-chicken 4
+  set shedding-period-duck 7
 end
 
 to setup        ;; setup the display with globals, patches, agents
@@ -368,7 +375,7 @@ to setupGlobals
 
   ;;preliminaries
   ;; set `DEBUG` to 0 during BahaviorSpace experiments (to speed runs)
-  set DEBUG ifelse-value (behaviorspace-run-number > 0) [0] [5]
+  set DEBUG ifelse-value (behaviorspace-run-number > 0) [0] [3]
   ;;set the random seed for experiments (but allow it to vary in GUI)
   if (behaviorspace-run-number > 0) [
     random-seed (314159 + behaviorspace-run-number)
@@ -434,7 +441,6 @@ to setup-baseline
   ;;NOTE: this will be executed *before* a scenario sets values!
   ;;      (so do not set slider or switch variables here)
   if not (member? baseline ["pert" "mode"]) [error "unrecognized baseline"]
-  ;;(chkchkchk counts in baseline.ini diverge slightly from table in paper!)
   ;; set values of constants
   let _ini read-params "baseline.ini"
   let _constantParams [ ;;constant throughout experiment
@@ -545,19 +551,36 @@ to setupScenario  [#scenario] ;;observer proc
       ["pct-from-visit-infect" 5]
       ["pct-to-visit-infect" 10]
       )
+  table:put scenarios "visit(verylow)" (list
+      ["pct-from-visit-infect" 5]
+      ["pct-to-visit-infect" 5]
+      )
   table:put scenarios "visit(zero)" (list
       ["pct-from-visit-infect" 0]
       ["pct-to-visit-infect" 0]
       )
-  ;;;;;; EGGTRADER SCENARIOS ;;;;;;
+  ;;;;;; FIELD SCENARIOS ;;;;;;
+  table:put scenarios "fgdsStay" (list
+      ["prop-fgd-barntofield" 0]
+      )
+  ;;;;;; TRADER SCENARIOS ;;;;;;
   ;; (used by eggtrade experiment)
   table:put scenarios "eggtrade(high)" (list
       ["pct-flock-eggtrader-contam" 88]
-      ["pct-eggtrader-flock-infect" 85]
+      ["pct-eggtrader-flock-infect" 88]
       )
   table:put scenarios "eggtrade(low)" (list
       ["pct-flock-eggtrader-contam" 53]
       ["pct-eggtrader-flock-infect" 55]
+      )
+  ;; (used by livetrade experiment)
+  table:put scenarios "livetrade(high)" (list
+      ["pct-flock-livetrader-contam" 95]
+      ["pct-livetrader-flock-infect" 92]
+      )
+  table:put scenarios "livetrade(low)" (list
+      ["pct-flock-livetrader-contam" 68]
+      ["pct-livetrader-flock-infect" 68]
       )
   ;pick out the scenario
   ; and set the parameter values for the chosen scenario
@@ -566,105 +589,105 @@ to setupScenario  [#scenario] ;;observer proc
   ]
 end
 
-to old-setupScenario  ;;observer proc
-  ;;Called by `setup` *after* `setup-baseline`.
-  ;;Side effects: set specified global parameters.
-  ;;
-  ;;First we choose a baseline (`pert` or `mode`);
-  ;;then we choose a scenario to deviate from the baseline
-  ;;(As it comes last in setup, this may **re**set some values!)
-  ;;Note: use the `scenario` choser to choose a scenario;
-  ;;this proc will then set the implied parameters.
-  ;;CAUTION: a scenario comes last in setup and thus
-  ;;  OVERWRITES current values.
-  ;;  (For example, those values set by an experiment!)
-  ;;CAUTON: scenario names are incorporated in file names
-  ;;  without testing; make sure they will be valid.
-  ;;  (Alphanumeric is safe.)
-  let _set-params []
-  if (scenario = "none") [] ;; change no values
-  ;;;;;; ROAD-FLOCK SCENARIOS ;;;;;;
-  if (scenario = "etlinks(low)") [
-    set _set-params
-    (list
-      (list "etlinks-task" [[] -> [1]])
-    )
-  ]
-  if (scenario = "etlinks(high)") [
-    set _set-params
-    (list
-      (list "etlinks-task" [[] -> [10]])
-    )
-  ]
-  if (scenario = "road-flock(high)") [
-    set _set-params
-    [
-      ["pct-road-pen-infect" 40]
-      ["pct-road-byc-infect" 71]
-    ]
-  ]
-  if (scenario = "road-flock(low)") [
-    set _set-params
-    [
-      ["pct-road-pen-infect" 0]
-      ["pct-road-byc-infect" 29]
-    ]
-  ]
-  if (scenario = "road-flock(zero)") [
-    set _set-params
-    [
-      ["pct-road-pen-infect" 0]
-      ["pct-road-byc-infect" 0]
-    ]
-  ]
-  ;;;;;; VISIT SCENARIOS ;;;;;;
-  if (scenario = "visit(veryhigh)") [
-    set _set-params
-    [
-      ["pct-from-visit-infect" 98]
-      ["pct-to-visit-infect" 100]
-    ]
-  ]
-  if (scenario = "visit(high)") [
-    set _set-params
-    [
-      ["pct-from-visit-infect" 30]
-      ["pct-to-visit-infect" 40]
-    ]
-  ]
-  if (scenario = "visit(low)") [
-    set _set-params
-    [
-      ["pct-from-visit-infect" 5]
-      ["pct-to-visit-infect" 10]
-    ]
-  ]
-  if (scenario = "visit(zero)") [
-    set _set-params
-    [
-      ["pct-from-visit-infect" 0]
-      ["pct-to-visit-infect" 0]
-    ]
-  ]
-  ;;;;;; EGGTRADER SCENARIOS ;;;;;;
-  ;; (used by eggtrade experiment)
-  if (scenario = "eggtrade(high)") [
-    set _set-params
-    [
-      ["pct-flock-eggtrader-contam" 88]
-      ["pct-eggtrader-flock-infect" 85]
-    ]
-  ]
-  if (scenario = "eggtrade(low)") [
-    set _set-params
-    [
-      ["pct-flock-eggtrader-contam" 53]
-      ["pct-eggtrader-flock-infect" 55]
-    ]
-  ]
-  ;;set the parameter values for the chosen scenario
-  foreach _set-params [? -> run (word "set " first ? " " last ?)]
-end
+;;  to old-setupScenario  ;;observer proc
+;;    ;;Called by `setup` *after* `setup-baseline`.
+;;    ;;Side effects: set specified global parameters.
+;;    ;;
+;;    ;;First we choose a baseline (`pert` or `mode`);
+;;    ;;then we choose a scenario to deviate from the baseline
+;;    ;;(As it comes last in setup, this may **re**set some values!)
+;;    ;;Note: use the `scenario` choser to choose a scenario;
+;;    ;;this proc will then set the implied parameters.
+;;    ;;CAUTION: a scenario comes last in setup and thus
+;;    ;;  OVERWRITES current values.
+;;    ;;  (For example, those values set by an experiment!)
+;;    ;;CAUTON: scenario names are incorporated in file names
+;;    ;;  without testing; make sure they will be valid.
+;;    ;;  (Alphanumeric is safe.)
+;;    let _set-params []
+;;    if (scenario = "none") [] ;; change no values
+;;    ;;;;;; ROAD-FLOCK SCENARIOS ;;;;;;
+;;    if (scenario = "etlinks(low)") [
+;;      set _set-params
+;;      (list
+;;        (list "etlinks-task" [[] -> [1]])
+;;      )
+;;    ]
+;;    if (scenario = "etlinks(high)") [
+;;      set _set-params
+;;      (list
+;;        (list "etlinks-task" [[] -> [10]])
+;;      )
+;;    ]
+;;    if (scenario = "road-flock(high)") [
+;;      set _set-params
+;;      [
+;;        ["pct-road-pen-infect" 40]
+;;        ["pct-road-byc-infect" 71]
+;;      ]
+;;    ]
+;;    if (scenario = "road-flock(low)") [
+;;      set _set-params
+;;      [
+;;        ["pct-road-pen-infect" 0]
+;;        ["pct-road-byc-infect" 29]
+;;      ]
+;;    ]
+;;    if (scenario = "road-flock(zero)") [
+;;      set _set-params
+;;      [
+;;        ["pct-road-pen-infect" 0]
+;;        ["pct-road-byc-infect" 0]
+;;      ]
+;;    ]
+;;    ;;;;;; VISIT SCENARIOS ;;;;;;
+;;    if (scenario = "visit(veryhigh)") [
+;;      set _set-params
+;;      [
+;;        ["pct-from-visit-infect" 98]
+;;        ["pct-to-visit-infect" 100]
+;;      ]
+;;    ]
+;;    if (scenario = "visit(high)") [
+;;      set _set-params
+;;      [
+;;        ["pct-from-visit-infect" 30]
+;;        ["pct-to-visit-infect" 40]
+;;      ]
+;;    ]
+;;    if (scenario = "visit(low)") [
+;;      set _set-params
+;;      [
+;;        ["pct-from-visit-infect" 5]
+;;        ["pct-to-visit-infect" 10]
+;;      ]
+;;    ]
+;;    if (scenario = "visit(zero)") [
+;;      set _set-params
+;;      [
+;;        ["pct-from-visit-infect" 0]
+;;        ["pct-to-visit-infect" 0]
+;;      ]
+;;    ]
+;;    ;;;;;; EGGTRADER SCENARIOS ;;;;;;
+;;    ;; (used by eggtrade experiment)
+;;    if (scenario = "eggtrade(high)") [
+;;      set _set-params
+;;      [
+;;        ["pct-flock-eggtrader-contam" 88]
+;;        ["pct-eggtrader-flock-infect" 88]
+;;      ]
+;;    ]
+;;    if (scenario = "eggtrade(low)") [
+;;      set _set-params
+;;      [
+;;        ["pct-flock-eggtrader-contam" 53]
+;;        ["pct-eggtrader-flock-infect" 55]
+;;      ]
+;;    ]
+;;    ;;set the parameter values for the chosen scenario
+;;    foreach _set-params [? -> run (word "set " first ? " " last ?)]
+;;  end
 
 to record-params
   ;;record the parameter values used for the run
@@ -762,7 +785,7 @@ to setup-patches ;;observer proc
   ask patches [
     set patch-type "ricefield"   ;;this inital value changes whenever we change the patch type
     set field-state "growing"    ;;we change this for non-field patch types
-    set field-patches nobody
+    set field-patches (patch-set ) ;empty
     set occupant nobody
     set road-access min-one-of intersections [distance myself]
     ;; set pcontam-until 0  ; default
@@ -932,49 +955,15 @@ to create-fields  ;; observer proc
 end
 
 
-; to old-create-fields [#num]  ;; observer proc
-;   if (DEBUG > 5) [log2file 5 "enter proc: create-fields"]
-;   ;; randomly create growing fields
-;   let _new-access-fields n-of #num rice-fields with [field-state = "growing" and field-num = 0]
-;   set access-fields (patch-set access-fields _new-access-fields)
-;   ;; number the field-access patches
-;   ask _new-access-fields [
-;     set n-access-fields (n-access-fields + 1)
-;     set field-num n-access-fields               ;; unique field identifier
-;   ]
-;   ;; create the fields
-;   ask _new-access-fields [
-;     let _field patch-set [neighbors] of neighbors
-;     set _field _field with [field-state = "growing" and field-num = 0]  ;; does *not* include the access-field patch
-;     ask _field [
-;       set field-num [field-num] of myself
-;     ]
-;     set field-patches (patch-set self _field)    ;; *include* the access patch
-;   ]
-;   if (DEBUG > 5) [log2file 5 "exit proc: create-fields"]
-; end
 
 to harvest-field ;;patch (access field) proc
   if (DEBUG > 5) [log2file 5 "enter proc: harvest-field"]
   if (field-state != "growing") [ error (word "field-state '" field-state "' should be 'growing'")]
-  if (field-patches = nobody) [ error "apply harvest-field proc only to access fields"]
+  if (not any? field-patches) [ error "apply harvest-field proc only to access fields"]
   ;;set rai random-pert  20 150 610 ;;chkchkchk do we still want this?? already used when create access fields!
-  ask field-patches [ set field-state "harvested"]
+  ask field-patches [set field-state "harvested"]
   if (DEBUG > 5) [log2file 5 "exit proc: harvest-field"]
 end
-
-;to fallow-field ;;access-field (patch) proc
-;  if (DEBUG > 5) [log2file 5 "enter proc: fallow-field"]
-;  if (field-state != "harvested") [
-;    let _msg (word "patch " self " has field-num " field-num " and field-patches " field-patches)
-;    log2file 5 _msg
-;    error (word _msg "field-state '" field-state "' should be 'harvested'")
-;  ]
-;  if (field-patches = nobody) [ error "apply fallow-field proc only to access fields"]
-;  set rai 0                ;; "wasted rai" chkchk! shd separate area from food-days
-;  ask field-patches [set field-state "fallow"]
-;  if (DEBUG > 5) [log2file 5 "exit proc: fallow-field"]
-;end
 
 to fallow [#field] ;;access-field (patch) proc
   if (DEBUG > 5) [log2file 5 "enter proc: fallow"]
@@ -1015,7 +1004,7 @@ to setup-agents ;;observer proc; sets up flocks and owners, and traders
   setup-duckfarms-and-owners     ;;sets `fmducks` and `fmd-owners` globals
   setup-chickenfarms-and-owners  ;;sets `fmchickens` and `fmc-owners` globals
 
-  ;; for completeness, create the `farm` & `farm-owners` agentset, but currently unused
+  ;; for completeness, create the `farm` & `farm-owners` agentset; alert: currently unused
   set farms (turtle-set fmducks fmchickens)  ;;chkchk unneeded??
   set farm-owners (turtle-set fmd-owners fmc-owners)
 
@@ -1096,7 +1085,7 @@ to setup-fgds-and-owners
   ask n-of _n-field-fgds access-fields with [not any? turtles-here] [
     sprout-ducks 1 [set field-only? true init-fgduck]
   ]
-  ;; create an agentset of fgds, which will not change
+  ;; create an agentset of fgducks, which will not change
   set fgducks ducks with [biotype = "fg"]
   ask fgducks [
   ]
@@ -1195,10 +1184,10 @@ end
 
 to init-flock-owner
   set fighting-cock nobody
-  ;;randomize number of visiting days (add explanation chkchk )
-  ;remove hard coding (move to baseline.ini)? chkchkchk
+  ;;randomize number of visiting days (todo: add explanation )
+  ;todo: remove hard coding (move to baseline.ini)
   set n-visit-days-per-week randomBinomial 7 0.42857
-  ;initially all flock owners have birds to sell (randomize? chkchk)
+  ;initially all flock owners have birds to sell (todo? randomize)
   set livebird-selldate (- LIVEBIRD-REPLENISH)
 end
 
@@ -1266,8 +1255,8 @@ to init-fgduck  ;;fgd proce; initializations for an fgduck
 ;  let rw-values n-values 23 [(? + 1) * 1e-3] chkchkchk
 ;  let rw-weights [ 0.0037 0.0383 0.0728 0.0846 0.0844 0.0796 0.0814 0.0794 0.0715 0.0645 0.0605 0.0534 0.0479 0.0393 0.0303 0.027 0.0222 0.0178 0.015 0.01 0.0069 0.0051 0.0044 ]
   ;; (Road contamination can also be made a continuous variable based on flock size and shedding amount per duck.)
-  set n-birds 2000 ;; TODO: fixed flock size of 2000 ducks may vary in the future
-  set has-eggs? true   ;;TODO: use this attribute
+  set n-birds 2000 ;; alert: fixed flock size of 2000 ducks may vary in the future
+  set has-eggs? true
   ;set the owner:
   add-flockowner
   if (field-only?) [ ;tie the owner to the flock
@@ -1292,7 +1281,7 @@ end
 
 to init-eggtrader
   set homebase patch-here
-  set n-eggtrader-links runresult etlinks-task ;; varied in our Se analysis: tested 1 and 10 chkchk
+  set n-eggtrader-links runresult etlinks-task ;; alert: varied in our Se analysis: tested 1 and 10
   log2file 5 (word "eggtrader " who " can service " n-eggtrader-links " farms")
 end
 
@@ -1314,38 +1303,39 @@ end
 to go  ;; observer proc (the schedule; one iteration)
   if (not setupComplete?) [log2file 0 "setup failed" stop]
   if (not runsim?) [
-    let _msg (word "Simulation stopped: " stop-sim-reason)
-    log2file 5 _msg
-    print _msg
+    log2file 0 (word "Simulation stopped: " stop-sim-reason)
     stop
   ]
-  if (DEBUG > 0) [
-    log2file 5 (word "run " behaviorspace-run-number ": " dayName " of week " week " is starting.")
-    log2file 5 (word "ticks is " ticks ". ")
-  ]
+  log2file 0 (word "\nrun " behaviorspace-run-number ": " dayName " of week " week " is starting.")
+  log2file 0 (word "ticks is " ticks ". ")
   file-open locations-file file-print (word "day " (ticks + 1)) file-close
   prepareDataTables  ;append 0 to each value in tables storing transmissions and contaminations by type
   updateFluStates    ;does scheduled state transitions (flu-state transitions)
 
   ask fgducks [go-to-field]  ;note: field-only fgducks may need a new field!
-  trade-eggs  ;egg traders collect eggs; poultry owners deliver eggs to mkt
+  trade-eggs dayName  ;egg traders collect eggs; poultry owners deliver eggs to mkt
   trade-birds
-  if (not forbid-fcs) [fight-cocks]  ;does policy forbid fighting cocks?
+  if (not forbid-fcs) [fight-cocks dayName]  ;does policy forbid fighting cocks?
   ask fgducks with [not field-only?] [
     travel-roads-to homebase
   ]
 
-  visit-neighbors
-
   ;spread the disease:
+  visit-neighbors
   roads-infect-flocks
-  if (not forbid-fcs) [ask fcs [infect-backyard]]
+  if (not forbid-fcs) [
+    ask fcs [
+      fc-flock-spread
+    ]
+    let _ct count (fcs with ["i" = flu-state])
+    log2file 5 (word "possible backyard infection by " _ct " infected fcs.")
+  ]
 
   tick  ;we tick *after* each iteration
-  updateGUI ;; calls updatePlots, which must come before decontamination of traders, locations chkchkchk
-  test-for-endsim ;;note: don't call stop here (bc then BS won't record final outcomes)
+  updateGUI ;; alert: calls updatePlots, which must come before decontamination of traders, locations
+  test-for-endsim ;;sets runsim?; note: don't call stop here (o/w BS won't record final outcomes)
   if (DEBUG > 0) [ test-go ]
-end
+end ;;go
 
 to prepareDataTables ;; observer proc
   ;start a new day: append a new zero entry to each transmission type
@@ -1381,7 +1371,7 @@ to go-to-field  ;; fgduck proc
   if (DEBUG > 5) [log2file 5 "enter proc: go-to-field"]
   update-target-field    ;;note: sets occupant on target fields and homepatch of field-only fgd-owners
   travel-roads-to target-field
-  graze-here ;; chk make infection possible during grazing?
+  graze-here ;; todo: make infection possible during grazing
   if (DEBUG > 5) [log2file 5 "exit proc: go-to-field"]
 end
 
@@ -1390,7 +1380,7 @@ to update-target-field ;; fgduck proc
   log2file 5 "enter proc: update-target-field"
   ;; first, check for out of district duck
   if (0 = target-field) [error "trouble with target-field"]
-  if ((target-field != nobody) and (member? target-field out-of-subdistrict-patches)) [stop] ;; chk out of sim forever ...
+  if ((target-field != nobody) and (member? target-field out-of-subdistrict-patches)) [stop] ;; alert: out of sim forever ...
   let _rai-needed (n-birds * RAI-PER-DUCK)
   let _old-target target-field
   if ((_old-target != nobody) and ([rai] of _old-target < _rai-needed)) [
@@ -1433,7 +1423,7 @@ to graze-here  ;; fgduck proc
   ]
   let consume (n-birds * RAI-PER-DUCK)
   set rai (rai - consume)  ;; rai is a patch attribute
-  if (flu-state = "i") [risk-ground-contamination "flock-field"]
+  if ("i" = flu-state) [risk-ground-contamination "flock-field"]
   ; expose can be added here
   ;increment the final entry of days-on-field
   let _newlist incrementLast table:get days-on-field who
@@ -1464,10 +1454,6 @@ to travel-roads-to [#target]  ;; fgduck proc, #target is a patch
   ask _intA [
     set _path-nodes nw:turtles-on-path-to _intB
     set _path-links nw:path-to _intB
-    ;old version:
-    ;set _path-nodes network:link-path-turtles _intB road-links
-    ;set _path-links network:link-path _intB road-links
-    ;chkchk nw:
   ]
   log2file 5 (word "short path from " _intA " to " _intB " is " _path-nodes)
   log2file 5 (word "short path from " _intA " to " _intB " is " _path-links)
@@ -1492,7 +1478,7 @@ to travel-roads-to [#target]  ;; fgduck proc, #target is a patch
   ;;finally, move from the access to the target patch
   move-to #target
   if (DEBUG > 3) [log2file 5 (word "reached target" #target)]
-  if (flu-state = "i") [
+  if ("i" = flu-state) [
     let _risks patch-set [road-patches] of link-set _path-links
     ask _risks [ risk-ground-contamination "flock-road" ]  ;;note: road patches can include barns!
   ]
@@ -1519,7 +1505,7 @@ to risk-transmission [#type]  ;; poulty proc
     if member? self bychickens [
       set _p pct-road-byc-infect
     ]
-    let _penned (turtle-set byducks fmducks fmchickens) ;;chkchk
+    let _penned (turtle-set byducks fmducks fmchickens) ;;chk
     if member? self _penned [
       set _p pct-road-pen-infect
       if (DEBUG > 0) [
@@ -1532,6 +1518,7 @@ to risk-transmission [#type]  ;; poulty proc
   ]
   if (#type = "fc-flock") [
     set _p pct-fc-byc-infect
+    log2file 0 (word "risk " #type " transmission")
   ]
   if (DEBUG > 0 and _p < 1 and _p != 0) [ ;; a test for value error
         let _msg (word "WARN: problem probability? " #type _p)
@@ -1613,16 +1600,13 @@ to risk-ground-contamination [#type]  ;; patch proc
 end
 
 to infect-poultry ;; poultry proc; state transition
-  if (DEBUG > 0) [
-    if not member? breed poultry-types [error (word breed " is not a poultry type")]
-    if (flu-state != "s") [error "flu-state should be 's'"]
-  ]
+  if not member? breed poultry-types [error (word breed " is not a poultry type")]
+  if (flu-state != "s") [error "flu-state should be 's'"]
   set flu-state "e"
   ; latent-period is one day for all flocks
   add-transition (ticks + latent-period) self
-  ;set infection-time 0
   record-infection-location
-  log2file 5 (word self "is infected")
+  log2file 0 (word "infect " self)
 end
 
 to add-transition [#date #agent]
@@ -1657,10 +1641,10 @@ to setup-egg&meat-pd  ;;chkchkchkchk
   ;;(If there is a coop, all FGDs deliver to a coop.
   ;; Otherwise, half have pickup, and half deliver to markets.)
   ;; Form two groups, those that get pickup, and those that deliver.
-  let pct-_deliver pct-fgd-deliver
-  if (n-cooperatives > 0) [set pct-_deliver 100] ;;all deliver to coops when possible
+  let _pct-deliver pct-fgd-deliver
+  if (n-cooperatives > 0) [set _pct-deliver 100] ;;all deliver to coops when possible
   ;; divide into pickup and delivery (baseline: about half deliver to market)
-  setup-egg-pickup-deliver-both fgducks (list (100 - pct-_deliver) pct-_deliver 0)
+  setup-egg-pickup-deliver-both fgducks (list (100 - _pct-deliver) _pct-deliver 0)
     n-egg-pickup-days-fgd-task n-egg-delivery-days-fgd-task n-onsite-eggtraders-fgd-task
 
   ;;BYDUCKS (penned ducks; BOTH eggs and meat)
@@ -1668,7 +1652,7 @@ to setup-egg&meat-pd  ;;chkchkchkchk
   let _groups disjoint-subsets byducks _meat-eggs-both
   let _byd-meat (turtle-set item 0 _groups item 2 _groups)
   let _byd-eggs (turtle-set item 1 _groups item 2 _groups)
-  if (DEBUG > 2) [
+  if (DEBUG > 2 and 0 = behaviorspace-run-number) [
     user-message (word "(byds) eggs: " count _byd-eggs " meat: " count _byd-meat)
   ]
   ask _byd-meat [
@@ -1692,8 +1676,8 @@ to setup-egg&meat-pd  ;;chkchkchkchk
   ask (turtle-set ducks chickens) with [n-egg-delivery-days != 0] [
     set target-egg-market min-one-of markets [distance myself]
   ]
-  ;;In (nondefault) scenarios that include coops,
-  ;;ALL and ONLY FGDs deliver to coops (see birdflu_supp.txt) chk
+  ;;Alert: In (nondefault) scenarios that include coops,
+  ;;ALL and ONLY FGDs deliver to coops.
   if (n-cooperatives > 0) [
     ask fgducks with [n-egg-delivery-days > 0] [
       set target-egg-market min-one-of cooperatives [distance myself]
@@ -1772,21 +1756,22 @@ end ;;END:setupEggtraders
 ;;;;;;;;;;;;;;;;;;;;;
 
 
-to trade-eggs ;;observer proc
+to trade-eggs [#dayName] ;;observer proc
   ;Note that having egg trading first facilitates the transmission process, since
-  ;  contam of the egg trader depends on there being infectious turtles, not infected patch.
+  ;  contamination of the egg trader depends on there being infectious turtles,
+  ;  not contaminated patch.
   ask (turtle-set fgducks fmducks byducks fmchickens) [set has-eggs? true]
-  ask eggtraders [ pickup-eggs ]
+  ask eggtraders [pickup-eggs #dayName]
   ask (turtle-set ducks chickens) with [n-egg-delivery-days != 0] [ deliver-eggs ]
 end
 
-to pickup-eggs     ;; eggtrader proc
+to pickup-eggs [#dayName]     ;; eggtrader proc
   ;; Each day, egg traders determine whether it is a pickup day for any of their contact flocks.
   ;; If it is, they collect from flocks who have that pickup day.
   ;_eggtrader-pickup-days is one sub-list of EGGTRADER-PICKUP-SCHEDULE, determining who picks up today
   let _eggtrader-pickup-days item dayIDX EGGTRADER-PICKUP-SCHEDULE
   let _suppliers in-link-neighbors with [has-eggs? and member? n-egg-pickup-days _eggtrader-pickup-days]
-  if (not any? _suppliers) [log2file 5 (word self " has no pickups on " dayName)]
+  if (not any? _suppliers) [log2file 5 (word self " has no pickups on " #dayName)]
   foreach [self] of _suppliers [? ->
     move-to ?
     log2file 5 (word "getting eggs from " ?)
@@ -1797,11 +1782,11 @@ to pickup-eggs     ;; eggtrader proc
   move-to homebase
 end
 
-
+;egg traders can become contaminated and then can infect flocks
 to contaminate-eggtrader  ;; eggtrader proc
   if not (member? self eggtraders) [error (word self " is not an eggtrader")]
-  let _at-risk turtles-here with [(member? breed poultry-types) and (flu-state = "s")]
-  let _risks turtles-here with [(member? breed poultry-types) and (flu-state = "i")]
+  let _at-risk turtles-here with [(member? breed flock-types) and ("s" = flu-state)] ;not fcs
+  let _risks turtles-here with [(member? breed flock-types) and ("i" = flu-state)] ;not fcs
   ;; eggtrader may contaminate poultry here
   if (contam-until > ticks) [
     ask _at-risk [risk-transmission "eggtrader-flock"]
@@ -1858,10 +1843,9 @@ to trade-birds ;;observer proc
     make-livetrader-pickup-network  ;;volatile network (for realism)
     pickup-livebirds ;; includes transmission and contamination risks
   ]
-  ;; clear links after the trading; the network is rebuilt each day
-  ask links with [ color = blue ] [ die ] ;chkchkchk
-  if (count livebird-links > 0) [error "surprise!"]
-  ;; comment: in our subdistrict, livetraders slaughter birds at homebase
+  ;; clear links after the trading
+  ask livebird-links [ die ] ;; the network is rebuilt each day
+  ;; alert: in our subdistrict, livetraders slaughter birds at homebase
   ;;   (i.e., live birds don't go to mkt)
 end
 
@@ -1881,7 +1865,6 @@ to make-livetrader-pickup-network ;; livetrader proc
               behaviorspace-run-number)
   ]
   create-livebird-links-with min-n-of _ct _livebird-suppliers [distance myself]
-  ask livebird-links [ set color blue ] ;chkchkchk
   if (DEBUG > 5) [show "exit proc: make-livetrader-pickup-network"]
 end
 
@@ -1898,8 +1881,8 @@ to pickup-livebirds ; livetrader proc, with transmission/contamination risk
     ;;NOTE: does NOT include fcs, because that would double count risks
     let _flocks (turtles-here with [member? breed flock-types])
     ;;trading involves transmission and contamination risks:
-    let _risks _flocks with [flu-state = "i"]
-    let _at-risk _flocks with [flu-state = "s"]
+    let _risks _flocks with ["i" = flu-state]
+    let _at-risk _flocks with ["s" = flu-state]
     ;; live trader may infect susceptible farm
     if (contam-until > ticks) [
       ask _at-risk [risk-transmission "livetrader-flock"]
@@ -1920,66 +1903,52 @@ end
 ;;Fighting Cock Procs;;
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-to fight-cocks  ;;observer proc (called in ``go``)
+to fight-cocks [#dayName] ;;observer proc, called by `go`, calls `fight-at`
   ;;for simplicity, only the fcs travel to the matches (not the owners)
   ;; (does not matter since we do not introduce owner contamination at the matches)
-  if (DEBUG > 5) [show "enter proc: fight-cocks"]
-  if (DEBUG > 3) [
-    file-open log-file
-    if ((dayName != "Wednesday") and (dayName != "Sunday")) [
-      file-print (word dayName ": No fighting cock activity today. ")
-    ]
-    file-close
-  ]
-  ;;as a simplification, all of our practice matches take place on Wed
-  if (dayName = "Wednesday") [
-    ;file-print (word dayName ": practice matches")
+  log2file 5 (word "enter fight-cocks")
+  log2file 0 (word #dayName (ifelse-value ((#dayName != "Wednesday") and (#dayName != "Sunday")) [": No fighting cock activity today. "][""]))
+  ;;as a simplification, all practice matches are on Wed
+  if (#dayName = "Wednesday") [
+    log2file 3 (word #dayName ": practice matches")
     ;let my-owners fc-owners with [practice-fight-week = (int (ticks / 7)) mod 2] ;;half fight on even weeks, half on odd
     ask practice-arenas [
       let _fcs n-of 20 (fcs with [target-practice-arena = myself])
       fight-at self _fcs
-      ;file-show (word count _fcs " FCs practicing here:")
+      log2file 0 (word count _fcs " FCs practicing at " self)
     ]
   ];endif
-  if (dayName = "Sunday") [
+  if (#dayName = "Sunday") [
     ;; Only fcs who compete go to the matches. (Simplification.)
     ;; Each fc-owner brings a FC to the match arena about twice yearly;
     ;; thus we average N-FCS/26 cocks fighting per week.
-    ;; (Initially we had 50/26~=2; we raised it to 200/26~=8.) chkchk
     ;; That does not count cocks from other subdistricts.
     ;; Realistically, there are about 10 fights (20 cocks) on a day.
-    ;; Do we have enough coming from our subdistrict?
-    ;;ai: chkchkchk NOTE switching to fixed *number* of fc owners at matches!!  OK??
-    ;; NOTE this still makes it so that only 2 owners from this subdistrict fight each week!
-    ;; chk Add risk from by birds from other subdistricts???
-    let _msg (word dayName ": fighting-cock matches:")
+    ;;alert: a fixed *number* of fc owners at matches
+    ;; todo? Add risk from by birds from other subdistricts
+    let _msg (word #dayName ": fighting-cock matches:")
     log2file 5 _msg
     if (0 = behaviorspace-run-number) [ print _msg]
-  ;; chkchkchk we need to determine how to make this a chance of infection at the arena
-  ;; becuase when this is TRUE, the arena infects a FC every time.
-  ;;**************20120410 AB Altered the transmission procs of FC a bit below
-    ask match-arenas [ ;only one in baseline model
-      let _fcs n-of round (N-FCS / (26 * N-MATCH-ARENAS)) fcs
+    ask match-arenas [ ;alert: only one in baseline model
+      let _fcs n-of (round (N-FCS / (26 * N-MATCH-ARENAS))) fcs
       fight-at self _fcs
+      log2file 0 (word count _fcs " FCs fighting matches at " self)
     ]
   ];endif
   ;file-close
-  if (DEBUG > 5) [show "exit proc: fight-cocks"]
+  log2file 5 "exit proc: fight-cocks"
 end
 
-
-to fight-at [#arena #fcs]  ;observer proc
+to fight-at [#arena #fcs]  ;observer proc, called by `fight-cocks`
   ask #fcs [move-to #arena]
-  if (any? #fcs with [flu-state = "i"]) [      ;; must check after all move
-    ;susceptible fcs risk becoming infected
-    ask (#fcs with [flu-state = "s"]) [
+  let _ct (count #fcs with ["i" = flu-state])
+  log2file 0 (word _ct " infected fcs at " #arena)
+  if (_ct > 0) [ ;susceptible fcs risk becoming infected
+    ask (#fcs with ["s" = flu-state]) [
       risk-transmission "arena-fc"
     ]
   ]
-  ;after the fight, they return to home base
-  ask #fcs [
-    move-to homebase
-  ]
+  ask #fcs [move-to homebase] ;after a match, fcs return to home base
 end
 
 ;;;;;;;;;;;;;;;;;;;
@@ -1989,32 +1958,35 @@ end
 to visit-neighbors ;observer proc, called by `go`
   ask fgd-links [
     untie
-    if (DEBUG > 5) [print (word end1 "untied for visiting")]
-  ]  ;not beautiful chk
-  ask flock-owners [visit]
+    log2file 5 (word end1 " untied for visiting")
+  ]  ;todo? not beautiful
+  ask flock-owners [visit] ;visit and return home
   ask fgd-links [
     tie
-    if (DEBUG > 5) [print (word end1 "tied after visiting")]
+    log2file 5 (word end1 " tied after visiting")
   ]
 end
 
+;;All poultry owners can move to a few neighbors daily for a visit.
+;;  The number of visits per day is determined by a binomial distribution
+;;  at flock-owner initialization)
 to visit ;poultry-owner proc, called by `visit-neighbors`
-  ;; all poultry owners can move to a few neighbors daily for a visit
-  ;; (number of visits per day determined by a binomial at initialization) chkchk
   if not member? breed human-types [error "should be a human"]
   ; _visit-days is one sub-list of VISIT-SCHEDULE, determining who visits today chkchk
   let _visit-days item dayIDX VISIT-SCHEDULE
   if not (member? n-visit-days-per-week _visit-days) [stop]
-  ;; contaminate owner at their house/barn (with 100% probability chkchk)
-  if (any? turtles-here with [member? breed poultry-types and (flu-state = "i")]) [ set contam-until (ticks + contam-period)]
-  let _to-visit [homebase] of n-of n-visits visit-list
+  ;; contaminate an owner at their own house/barn (with 100% probability; see docs)
+  if (any? turtles-here with [member? breed flock-types and ("i" = flu-state)]) [
+    set contam-until (ticks + contam-period)
+  ]
+  let _to-visit [homebase] of n-of n-visits visit-list  ;who to visit today
   foreach _to-visit [? ->
     move-to ?
-    ifelse (contam-until > ticks) [
-      let _at-risk turtles-here with [(member? breed poultry-types) and (flu-state = "s")]         ;; expose flock at neighbor's house
+    ifelse (contam-until > ticks) [ ;; expose flock at neighbor's house
+      let _at-risk turtles-here with [(member? breed flock-types) and ("s" = flu-state)]
       ask _at-risk [ risk-transmission "visitor-flock" ]
     ] [
-      let _risks (turtles-here with [(member? breed poultry-types) and (flu-state = "i")])
+      let _risks (turtles-here with [(member? breed flock-types) and ("i" = flu-state)])
       if (any? _risks) [risk-human-contamination "flock-visitor"]
     ]
   ]
@@ -2022,9 +1994,9 @@ to visit ;poultry-owner proc, called by `visit-neighbors`
   ;; after visit, backyard owner may infect own flock
   move-to homebase
   if (contam-until > ticks) [
-    let _at-risk turtles-here with [(member? breed poultry-types) and (flu-state = "s")]            ;; 120913AB: I changed the "i" to "s" chkchkchk
+    let _at-risk turtles-here with [(member? breed flock-types) and ("s" = flu-state)]
     ask _at-risk [ risk-transmission "after-visit" ]
-    ;;decontaminate (cleaned up) after one day chkchkchk (see contam-until)
+    ;;decontaminate (cleaned up) after one day (see contam-until)
   ]
 end
 
@@ -2042,7 +2014,7 @@ end
 to road-infect-backyard ;;bychicken proc
   ;; this is NOT applied to byducks, which are penned!
   ;; byducks don't roam like bychickens; less likely reach road/driveway
-  if (pcontam-until > ticks) and (flu-state = "s") [
+  if (pcontam-until > ticks) and ("s" = flu-state) [
     risk-transmission "road-flock"
   ]
 end
@@ -2050,17 +2022,20 @@ end
 ;; note: looks identical to road-infect-backyard, but
 ;; the prob of transmission to road-penned birds (ducks&farmed chickens) is lower than bychickens
 to road-infect-penned ;;byduck and farm proc
-  if (pcontam-until > ticks) and (flu-state = "s") [
+  if (pcontam-until > ticks) and ("s" = flu-state) [
    risk-transmission "road-flock"
   ]
 end
 
-to infect-backyard   ;;fc proc called in fight-cocks
-  ;; assumption is that if flock is not infected by the FC, then the infection dies and is not transported to neighbors chk
+to fc-flock-spread   ;;fc proc, called by `fight-cocks`
+  ;;alert: assumption is that if flock is not infected by the FC, then the infection dies and is not transported to neighbors
   if (DEBUG > 0 and not member? self fcs) [error "This proc shd only be called on fcs"]
   let _flock ([flock] of owner)
-  if ((flu-state = "i") and ([flu-state] of _flock = "s")) [
+  if (("i" = flu-state) and ([flu-state] of _flock = "s")) [
     ask _flock [risk-transmission "fc-flock"]
+  ]
+  if (("s" = flu-state) and ([flu-state] of _flock = "i")) [
+    infect-poultry ;fc infected by flock (and may later spread through arena)
   ]
 end
 
@@ -2111,9 +2086,9 @@ to test-for-endsim
       + (count turtles with [member? breed human-types and contam-until > ticks])
       + (count barns with [ pcontam-until > ticks ])
       + (count practice-arenas with [ pcontam-until > ticks ])  ;;TODO: inlcude match arena
-      = 0) or ticks > 150 [   ;;chkchkchk
+      = 0) or ticks > 150 [   ;;todo? 150 is a somewhat arbitrary 5 months
     set stop-sim-reason (word "Outbreak is over after " ticks " ticks.")
-    set runsim? false   ;;don't call stop bc then BS won't record final outcomes
+    set runsim? false
   ]
 end
 
@@ -2146,7 +2121,8 @@ to test-setup-patches
 
   ;; ensure that only ricefields shd have a non-empty field-state
   ask patches [
-    if (patch-type = "ricefield") and (not member? field-state ["growing" "harvested" "fallow"]) [
+    if (patch-type = "ricefield") and
+       (not member? field-state ["growing" "harvested" "fallow"]) [
       error "ricefields should have field-state"
     ]
     if (patch-type != "ricefield" and field-state != "") [
@@ -2171,9 +2147,15 @@ end
 
 to test-setup-agents
   if (not all? fgducks [nobody != target-field]) [error "bad duck setup"]
-  if (7 != length LIVETRADER-PICKUP-SCHEDULE) [error "bad livetrader schedule"]
-  if (count livetraders != N-LIVETRADERS) [error "setup error: wrong number of livetraders"]
-  if (not all? livetraders [member? n-bird-pickup-days [1 2 3]]) [error "wrong number of pickup days"]
+  if (7 != length LIVETRADER-PICKUP-SCHEDULE) [
+    error "bad livetrader schedule"
+  ]
+  if (count livetraders != N-LIVETRADERS) [
+    error "setup error: wrong number of livetraders"
+  ]
+  if (not all? livetraders [member? n-bird-pickup-days [1 2 3]]) [
+    error "wrong number of pickup days"
+  ]
   if (N-FCS != count fcs) [error "bad setup of fighting cocks"]
   ask (turtle-set flock-types) [
     if (n-onsite-eggtraders != count my-egg-links) [
@@ -2202,7 +2184,7 @@ to test-setup-agents
     if (biotype != "pen") [error "biotype not set correctly"]
     if not (member? n-onsite-eggtraders [0 1]) [error "byducks have at most 1 eggtrader"]
   ]
-  ;;WARNING: hard coded (nongeneric) error chk
+  ;;WARNING: hard coded (nongeneric) error todo?
   if (52 != count byducks with [n-egg-pickup-days != 0 or n-egg-delivery-days != 0]) [
     ask byducks [show (word n-egg-pickup-days " " n-egg-delivery-days)]
     error (word "setup problem: 52 != " (count byducks with [n-egg-pickup-days != 0 or n-egg-delivery-days != 0]))
@@ -2279,14 +2261,10 @@ to setup-visuals
     if roadtype = "small_road" [set color black set thickness 0.2]
     if roadtype = "field_road" [set color black set thickness 0.1]
   ]
-  ;;old visuals chkchkchk
-  ;ask road-links with [roadtype = "major_road"] [set color red]
-  ;ask road-links with [roadtype = "loose_road"] [set color violet]
-  ;ask road-links with [roadtype = "small_road"] [set color pink]
 
   ;;; poulty visuals
   ;;fc visuals:
-  ;ask fcs [set color orange] ;chk (too cluttered to show?)
+  ;ask fcs [set color orange] ;alert too cluttered to show
   ask fcs [hide-turtle]
   ;;fmchickens visuals
   if not any? fmchickens [error "must create fmchickens before setting visuals"]
@@ -2335,7 +2313,7 @@ end
 to displayFields
   ask patches [
     if (field-state = "fallow") [ set pcolor 48] ;light yellow
-    if (field-state = "harvested") [ set pcolor yellow]
+    if (field-state = "harvested") [ set pcolor (1 + yellow)]
     if (field-state = "growing") [ set pcolor 57] ;light green
   ]
 end
@@ -2343,10 +2321,10 @@ end
 to displayFlocks
   let _flocks (turtle-set chickens fcs ducks)
   ask _flocks [
-    if (flu-state = "i") [
+    if ("i" = flu-state) [
       set color pink
     ]
-    if (flu-state = "d" or flu-state = "r") [
+    if ("d" = flu-state or "r" = flu-state) [
       set color gray
     ]
   ]
@@ -2385,13 +2363,13 @@ to updatePlots
 
   set-current-plot "Flocks Affected (Post-shedding)"
   set-current-plot-pen "Backyard Flocks"
-  plot ((count bychickens with [flu-state = "d"]) / N-BYCHICKENS)
+  plot ((count bychickens with ["d" = flu-state]) / N-BYCHICKENS)
   set-current-plot-pen "Small Duck Flocks"
-  plot ((count byducks with [flu-state = "r"]) / N-BYDUCKS)
+  plot ((count byducks with ["r" = flu-state]) / N-BYDUCKS)
   set-current-plot-pen "FGD Flocks"
-  plot ((count fgducks with [flu-state = "r"]) / N-FGDS)
+  plot ((count fgducks with ["r" = flu-state]) / N-FGDS)
   set-current-plot-pen "Farms"
-  plot ((count farms with [flu-state = "r" or flu-state = "d"]) / (count farms))
+  plot ((count farms with ["r" = flu-state or "d" = flu-state]) / (count farms))
 
   set-current-plot "rai available"
   clear-plot
@@ -2458,135 +2436,136 @@ end
 
 ;; counts of exposed poultry ;;
 to-report e:bychickens
-  report count bychickens with [flu-state = "e"]
+  report count bychickens with ["e" = flu-state]
 end
 
 to-report e:byducks
-  report count byducks with [flu-state = "e"]
+  report count byducks with ["e" = flu-state]
 end
 
 to-report e:fgducks
-  report count fgducks with [flu-state = "e"]
+  report count fgducks with ["e" = flu-state]
 end
 
 to-report e:farms
-  report count farms with [flu-state = "e"]
+  report count farms with ["e" = flu-state]
 end
 
 to-report e:flocks
-  report count turtles with [(member? breed flock-types) and (flu-state = "e")]
+  report count turtles with [(member? breed flock-types) and ("e" = flu-state)]
 end
 
 to-report e:poultry
-  report count turtles with [(member? breed poultry-types) and (flu-state = "e")]
+  report count turtles with [(member? breed poultry-types) and ("e" = flu-state)]
 end
 
 ;; report counts of infectious poultry ;;
 to-report i:fgducks
-  report count fgducks with [flu-state = "i"]
+  report count fgducks with ["i" = flu-state]
 end
 
 to-report i:bychickens
-  report count bychickens with [flu-state = "i"]
+  report count bychickens with ["i" = flu-state]
 end
 
 to-report i:byducks
-  report count byducks with [flu-state = "i"]
+  report count byducks with ["i" = flu-state]
 end
 
 to-report i:farms
-  report count farms with [flu-state = "i"]
+  report count farms with ["i" = flu-state]
 end
 
 to-report i:flocks
-  report count turtles with [(member? breed flock-types) and (flu-state = "i")]
+  report count turtles with [(member? breed flock-types) and ("i" = flu-state)]
 end
 
 to-report i:poultry
-  report count turtles with [(member? breed poultry-types) and (flu-state = "i")]
+  report count turtles with [(member? breed poultry-types) and ("i" = flu-state)]
 end
 
 ;; counts of recovered or removed (dead) poultry ;;
 to-report r:fgducks
-  report count fgducks with [flu-state = "r"]
+  report count fgducks with ["r" = flu-state]
 end
 
 to-report r:byducks
-  report count byducks with [flu-state = "r"]
+  report count byducks with ["r" = flu-state]
 end
 
 to-report d:bychickens
-  report count bychickens with [flu-state = "d"]
+  report count bychickens with ["d" = flu-state]
 end
 
 to-report dr:farms
   report count farms with [
-    (flu-state = "r") or (flu-state = "d")
+    ("r" = flu-state) or ("d" = flu-state)
   ]
 end
 
 to-report dr:flocks
   report count (turtle-set flock-types) with [
-    flu-state = "r" or flu-state = "d"
+    "r" = flu-state or "d" = flu-state
   ]
 end
 
 to-report dr:poultry
   report count (turtle-set poultry-types) with [
-    flu-state = "r" or flu-state = "d"
+    "r" = flu-state or "d" = flu-state
   ]
 end
 
 
 ;; counts of poultry not yet exposese state ;;
 to-report s:fgducks
-  let s count fgducks with [not (member? flu-state "eir")]
-  if not (s = count fgducks with [flu-state = "s"]) [
+  let _nSusceptible count fgducks with [not (member? flu-state "eir")]
+  if not (_nSusceptible = count fgducks with ["s" = flu-state]) [
     error "counting error"
   ]
-  report s
+  report _nSusceptible
 end
 
 to-report s:byducks
-  let s count byducks with [not (member? flu-state "eir")]
-  if not (s = count byducks with [flu-state = "s"]) [
+  let _nSusceptible count byducks with [not (member? flu-state "eir")]
+  if not (_nSusceptible = count byducks with ["s" = flu-state]) [
     error "counting error"
   ]
-  report s
+  report _nSusceptible
 end
 
 to-report s:bychickens
-  let s count bychickens with [not (member? flu-state "eid")]
-  if not (s = count bychickens with [flu-state = "s"]) [
+  let _nSusceptible count bychickens with [not (member? flu-state "eid")]
+  if not (_nSusceptible = count bychickens with ["s" = flu-state]) [
     error "counting error"
   ]
-  report s
+  report _nSusceptible
 end
 
 to-report s:farms
-  let s count farms with [not (member? flu-state "eird")]
-  if not (s = count farms with [flu-state = "s"]) [
+  let _nSusceptible count farms with [not (member? flu-state "eird")]
+  if not (_nSusceptible = count farms with ["s" = flu-state]) [
     error "counting error"
   ]
-  report s
+  report _nSusceptible
 end
 
 to-report s:flocks
-  let f (turtle-set flock-types) ;;chkchk
-  let s count f with [not (member? flu-state "eird")]
-  if not (s = count f with [flu-state = "s"]) [
+  let _fs (turtle-set flock-types) ;;chkchk
+  let _nSusceptible count _fs with [not (member? flu-state "eird")]
+  if not (_nSusceptible = count _fs with ["s" = flu-state]) [
     error "counting error"
   ]
-  report s
+  report _nSusceptible
 end
 
+;this might not be useful (bc includes fcs)
 to-report s:poultry
-  let p (turtle-set poultry-types)  ;;chkchk
-  let s count p with [not (member? flu-state "eird")]
-  if not (s = count p with [flu-state = "s"]) [
+  let p (turtle-set poultry-types)
+  let _nSusceptible count p with [not (member? flu-state "eird")]
+  if not (_nSusceptible = count p with ["s" = flu-state]) [
     error "counting error"
   ]
-  report s
+  report _nSusceptible
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -2739,7 +2718,7 @@ CHOOSER
 290
 scenario
 scenario
-"none" "eggtrade(high)" "eggtrade(low)" "road-flock(high)" "road-flock(low)" "road-flock(zero)" "visit(veryhigh)" "visit(high)" "visit(low)" "visit(zero)"
+"none" "livetrade(high)" "livetrade(low)" "eggtrade(high)" "eggtrade(low)" "road-flock(high)" "road-flock(low)" "road-flock(zero)" "visit(veryhigh)" "visit(high)" "visit(low)" "visit(verylow)" "visit(zero)" "fgdsStay"
 6
 
 PLOT
@@ -3017,31 +2996,31 @@ COntacts made: Farms where pick up birds (contamination source); Flocks by actin
 
 ## HOW TO USE IT
 
-This section could explain how to use the model, including a description of each of the items in the interface tab.
+Choose a parameterization. Press the Set Up button. Set up can take a while. Then press go.
 
 ## THINGS TO NOTICE
 
-This section could give some ideas of things for the user to notice while running the model.
+Initial infection may propagate or quickly die out. When the disease propagates, most flocks are affected. Visiting plays a crucial role.
 
 ## THINGS TO TRY
 
-This section could give some ideas of things for the user to try to do (move sliders, switches, etc.) with the model.
+Eliminate cock fighting.
 
 ## EXTENDING THE MODEL
 
-This section could give some ideas of things to add or change in the procedures tab to make the model more complicated, detailed, accurate, etc.
+Add other humans who are not directly engaged in the poultry trade.
 
 ## NETLOGO FEATURES
 
-This section could point out any especially interesting or unusual features of NetLogo that the model makes use of, particularly in the Procedures tab.  It might also point out places where workarounds were needed because of missing features.
+Use of tasks.
 
 ## RELATED MODELS
 
-This section could give the names of models in the NetLogo Models Library or elsewhere which are of related interest.
+https://www.researchgate.net/publication/222826431_Modelling_and_analysis_of_global_epidemiology_of_avian_influenza_Environmental_Modelling_and_Software_24_124-134
 
 ## CREDITS AND REFERENCES
 
-This section could contain a reference to the model's URL on the web if it has one, as well as any other necessary credits or references.
+GitHub: https://github.com/alan-isaac/birdflu
 @#$#@#$#@
 default
 true
@@ -3384,11 +3363,13 @@ NetLogo 6.2.1
 @#$#@#$#@
 @#$#@#$#@
 <experiments>
-  <experiment name="BaselineModel" repetitions="50" runMetricsEveryStep="true">
+  <experiment name="baseline500" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
     <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
     <metric>ntrans:road-flock</metric>
     <metric>ntrans:after-visit</metric>
     <metric>ntrans:visitor-flock</metric>
@@ -3401,188 +3382,43 @@ NetLogo 6.2.1
     <metric>ncont:flock-visitor</metric>
     <metric>ncont:flock-road</metric>
     <metric>ncont:flock-field</metric>
-    <metric>map [? -&gt; item 1 ?] table:to-list days-on-field</metric>
-    <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>e:fgducks</metric>
-    <metric>i:fgducks</metric>
-    <metric>r:fgducks</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
     <metric>e:bychickens</metric>
-    <metric>i:bychickens</metric>
-    <metric>d:bychickens</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
     <metric>e:byducks</metric>
-    <metric>i:byducks</metric>
-    <metric>r:byducks</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
+    <metric>e:fgducks</metric>
     <metric>e:farms</metric>
-    <metric>i:farms</metric>
-    <metric>dr:farms</metric>
+    <metric>e:flocks</metric>
     <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
     <metric>i:poultry</metric>
-    <metric>r:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;pert&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;none&quot;"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="visitorInfectProb" repetitions="100" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
     <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;pert&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;none&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="98"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="100"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="fgdFieldBarn" repetitions="100" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>map [? -&gt; item 1 ?] table:to-list days-on-field</metric>
     <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
       <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="scenario">
       <value value="&quot;none&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
       <value value="4"/>
@@ -3593,230 +3429,962 @@ NetLogo 6.2.1
     <enumeratedValueSet variable="prop-fgd-barntofield">
       <value value="0.6"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
   </experiment>
-  <experiment name="eggtraderLinks" repetitions="100" runMetricsEveryStep="true">
+  <experiment name="baseline" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;pert&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;none&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="88"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="85"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="duckShedding" repetitions="100" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
     <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;pert&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;none&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="chickenShedding" repetitions="100" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
     <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
       <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="scenario">
       <value value="&quot;none&quot;"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="baseline10" repetitions="10" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="baseline(mode)" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="test" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;visit(verylow)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="coop" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
       <value value="1"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="eggtrade" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;eggtrade(high)&quot;"/>
+      <value value="&quot;eggtrade(low)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="livetrade" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;livetrade(high)&quot;"/>
+      <value value="&quot;livetrade(low)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="eggtrade10" repetitions="10" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;eggtrade(high)&quot;"/>
+      <value value="&quot;eggtrade(low)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="eggtrade(mode)" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;eggtrade(high)&quot;"/>
+      <value value="&quot;eggtrade(low)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="visit" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;visit(veryhigh)&quot;"/>
+      <value value="&quot;visit(high)&quot;"/>
+      <value value="&quot;visit(low)&quot;"/>
+      <value value="&quot;visit(verylow)&quot;"/>
+      <value value="&quot;visit(zero)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="visitMode" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;mode&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;visit(veryhigh)&quot;"/>
+      <value value="&quot;visit(high)&quot;"/>
+      <value value="&quot;visit(low)&quot;"/>
+      <value value="&quot;visit(verylow)&quot;"/>
+      <value value="&quot;visit(zero)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="visitRadius" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="visit-radius">
       <value value="5"/>
     </enumeratedValueSet>
   </experiment>
-  <experiment name="roadInfectBYC" repetitions="100" runMetricsEveryStep="true">
+  <experiment name="roadFlock" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
       <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="scenario">
-      <value value="&quot;none&quot;"/>
+      <value value="&quot;road-flock(high)&quot;"/>
+      <value value="&quot;road-flock(low)&quot;"/>
+      <value value="&quot;road-flock(zero)&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
       <value value="4"/>
@@ -3824,99 +4392,64 @@ NetLogo 6.2.1
     <enumeratedValueSet variable="shedding-period-duck">
       <value value="7"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
   </experiment>
-  <experiment name="roadPenProb" repetitions="100" runMetricsEveryStep="true">
+  <experiment name="initialInfectionSource" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;pert&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;none&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="initialInfectionSource" repetitions="100" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>map [? -&gt; item 1 ?] table:to-list days-on-field</metric>
     <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
       <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
@@ -3929,305 +4462,299 @@ NetLogo 6.2.1
       <value value="&quot;byduck&quot;"/>
       <value value="&quot;bychicken&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
       <value value="4"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-duck">
       <value value="7"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
   </experiment>
-  <experiment name="highEggtraderContamInfect" repetitions="100" runMetricsEveryStep="true">
+  <experiment name="chickenShedding" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
       <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="scenario">
       <value value="&quot;none&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="88"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="88"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="0"/>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
+      <value value="1"/>
+      <value value="5"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-duck">
       <value value="7"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
   </experiment>
-  <experiment name="highLivetraderContamInfect" repetitions="100" runMetricsEveryStep="true">
+  <experiment name="duckShedding" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
       <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="scenario">
       <value value="&quot;none&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-pen-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-road-byc-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-from-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-to-visit-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-eggtrader-contam">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-eggtrader-flock-infect">
-      <value value="0"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-flock-livetrader-contam">
-      <value value="95"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="pct-livetrader-flock-infect">
-      <value value="92"/>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
       <value value="4"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="roadFlock" repetitions="100" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>map [? -&gt; item 1 ?] table:to-list days-on-field</metric>
-    <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;mode&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;road-flock(high)&quot;"/>
-      <value value="&quot;road-flock(low)&quot;"/>
-      <value value="&quot;road-flock(zero)&quot;"/>
+      <value value="1"/>
+      <value value="10"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="prop-fgd-barntofield">
       <value value="0.6"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="fgdsStayOnField" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;fgdsStay&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
       <value value="4"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-duck">
       <value value="7"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="n-cooperatives">
-      <value value="0"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="visit" repetitions="10" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>map [? -&gt; item 1 ?] table:to-list days-on-field</metric>
-    <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
-    <metric>count eggtraders</metric>
-    <enumeratedValueSet variable="baseline">
-      <value value="&quot;mode&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="scenario">
-      <value value="&quot;visit(veryhigh)&quot;"/>
-      <value value="&quot;visit(high)&quot;"/>
-      <value value="&quot;visit(low)&quot;"/>
-      <value value="&quot;visit(zero)&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="prop-fgd-barntofield">
       <value value="0.6"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-chicken">
-      <value value="4"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="shedding-period-duck">
-      <value value="7"/>
-    </enumeratedValueSet>
     <enumeratedValueSet variable="n-cooperatives">
       <value value="0"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
   </experiment>
-  <experiment name="aibaseline" repetitions="500" runMetricsEveryStep="true">
+  <experiment name="fgdFieldBarn" repetitions="500" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <final>export-transmissions-and-contaminations</final>
-    <metric>table:to-list transmissions</metric>
-    <metric>table:to-list contaminations</metric>
-    <metric>map [? -&gt; item 1 ?] table:to-list days-on-field</metric>
-    <metric>count barns with [pcontam-until &gt; ticks]</metric>
-    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
-    <metric>count fgducks with [not (member? flu-state "eir")]</metric>
-    <metric>count fgducks with [flu-state = "e"]</metric>
-    <metric>count fgducks with [flu-state = "i"]</metric>
-    <metric>count fgducks with [flu-state = "r"]</metric>
-    <metric>count bychickens with [not (member? flu-state "eid")]</metric>
-    <metric>count bychickens with [flu-state = "e"]</metric>
-    <metric>count bychickens with [flu-state = "i"]</metric>
-    <metric>count bychickens with [flu-state = "d"]</metric>
-    <metric>count byducks with [not (member? flu-state "eir")]</metric>
-    <metric>count byducks with [flu-state = "e"]</metric>
-    <metric>count byducks with [flu-state = "i"]</metric>
-    <metric>count byducks with [flu-state = "r"]</metric>
-    <metric>count farms with [not (member? flu-state "eird")]</metric>
-    <metric>count farms with [flu-state = "e"]</metric>
-    <metric>count farms with [flu-state = "i"]</metric>
-    <metric>count farms with [member? flu-state "dr"]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "e")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "i")]</metric>
-    <metric>count turtles with [(member? breed poultry-types) and (flu-state = "r")]</metric>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
     <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
     <enumeratedValueSet variable="baseline">
-      <value value="&quot;mode&quot;"/>
+      <value value="&quot;pert&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="scenario">
       <value value="&quot;none&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="prop-fgd-barntofield">
-      <value value="0.6"/>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="shedding-period-chicken">
       <value value="4"/>
@@ -4235,8 +4762,314 @@ NetLogo 6.2.1
     <enumeratedValueSet variable="shedding-period-duck">
       <value value="7"/>
     </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0"/>
+      <value value="1"/>
+    </enumeratedValueSet>
     <enumeratedValueSet variable="n-cooperatives">
       <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="visitorInfectProb" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="pct-from-visit-infect">
+      <value value="98"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="pct-to-visit-infect">
+      <value value="100"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="etlinks" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;etlinks(high)&quot;"/>
+      <value value="&quot;etlinks(low)&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="false"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="no-fcs" repetitions="500" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="true"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="no-fcs-small" repetitions="25" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>export-transmissions-and-contaminations</final>
+    <metric>ticks</metric>
+    <metric>pct-flock-eggtrader-contam</metric>
+    <metric>pct-eggtrader-flock-infect</metric>
+    <metric>ntrans:road-flock</metric>
+    <metric>ntrans:after-visit</metric>
+    <metric>ntrans:visitor-flock</metric>
+    <metric>ntrans:eggtrader-flock</metric>
+    <metric>ntrans:livetrader-flock</metric>
+    <metric>ntrans:arena-fc</metric>
+    <metric>ntrans:fc-flock</metric>
+    <metric>ncont:flock-livetrader</metric>
+    <metric>ncont:flock-eggtrader</metric>
+    <metric>ncont:flock-visitor</metric>
+    <metric>ncont:flock-road</metric>
+    <metric>ncont:flock-field</metric>
+    <metric>s:bychickens</metric>
+    <metric>s:fgducks</metric>
+    <metric>s:byducks</metric>
+    <metric>s:farms</metric>
+    <metric>s:flocks</metric>
+    <metric>s:poultry</metric>
+    <metric>e:bychickens</metric>
+    <metric>e:byducks</metric>
+    <metric>e:fgducks</metric>
+    <metric>e:farms</metric>
+    <metric>e:flocks</metric>
+    <metric>e:poultry</metric>
+    <metric>i:bychickens</metric>
+    <metric>i:byducks</metric>
+    <metric>i:fgducks</metric>
+    <metric>i:farms</metric>
+    <metric>i:flocks</metric>
+    <metric>i:poultry</metric>
+    <metric>d:bychickens</metric>
+    <metric>r:fgducks</metric>
+    <metric>r:byducks</metric>
+    <metric>dr:farms</metric>
+    <metric>dr:flocks</metric>
+    <metric>dr:poultry</metric>
+    <metric>count eggtraders</metric>
+    <metric>count rice-fields with [ (field-state = "harvested") and (pcontam-until &gt; ticks)]</metric>
+    <metric>count barns with [pcontam-until &gt; ticks]</metric>
+    <metric>map [[?] -> item 1 ?] table:to-list days-on-field</metric>
+    <metric>table:to-list contaminations</metric>
+    <enumeratedValueSet variable="baseline">
+      <value value="&quot;pert&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="scenario">
+      <value value="&quot;none&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="infection-source">
+      <value value="&quot;fgduck&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-chicken">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="shedding-period-duck">
+      <value value="7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="prop-fgd-barntofield">
+      <value value="0.6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="n-cooperatives">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="forbid-fcs">
+      <value value="true"/>
     </enumeratedValueSet>
   </experiment>
 </experiments>

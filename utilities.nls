@@ -1,5 +1,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;     UTILITIES (for birdflu project)      ;;
+;; author: Alan G. Isaac                    ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; return a result (value) based on the probabilities (defined by #weights) of each value
@@ -204,8 +205,8 @@ to-report random-pert [#minval #likeval #maxval]
 end
 
 
-;;NOTE: this information is redundant, but it is still included
-;; used as an "final" command in experiments ... chkchk
+;;NOTE: this information is redundant, but it is still included chkchkchk
+;; Can be used as a "final" command in experiments.
 to export-transmissions-and-contaminations
   ;;Write sums of transmissions and contaminations to file.
   ;;Intended to be called at the end of each replicate (i.e., to be used as a "final" command).
